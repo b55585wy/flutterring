@@ -41,6 +41,7 @@ import com.tsinghua.openring.R;
 import com.tsinghua.openring.PlotView;
 import com.tsinghua.openring.utils.BLEService;
 import com.tsinghua.openring.utils.NotificationHandler;
+import com.tsinghua.openring.utils.VitalSignsProcessor;
 
 import java.io.BufferedWriter;
 import java.io.File;
@@ -118,6 +119,15 @@ public class MainActivity extends AppCompatActivity implements IResponseListener
     private PlotView plotViewGyroX, plotViewGyroY, plotViewGyroZ;
     private PlotView plotViewTemp0, plotViewTemp1, plotViewTemp2;
     private boolean isMeasuring = false;
+    
+    // HR/RR Display Components
+    private TextView heartRateValue;
+    private TextView respiratoryRateValue;
+    private TextView signalQualityIndicator;
+    private TextView lastUpdateTime;
+    
+    // Vital Signs Processor
+    private VitalSignsProcessor vitalSignsProcessor;
 
     // File Operation Related
     private List<FileInfo> fileList = new ArrayList<>();
@@ -280,6 +290,7 @@ public class MainActivity extends AppCompatActivity implements IResponseListener
         setupClickListeners();
         setupNotificationHandler();
         loadDeviceInfo();
+        setupVitalSignsProcessor();
 
         // Show Dashboard page
         showDashboard();
@@ -362,6 +373,12 @@ public class MainActivity extends AppCompatActivity implements IResponseListener
         plotViewTemp0 = findViewById(R.id.plotViewTemp0);
         plotViewTemp1 = findViewById(R.id.plotViewTemp1);
         plotViewTemp2 = findViewById(R.id.plotViewTemp2);
+        
+        // HR/RR Display Components
+        heartRateValue = findViewById(R.id.heartRateValue);
+        respiratoryRateValue = findViewById(R.id.respiratoryRateValue);
+        signalQualityIndicator = findViewById(R.id.signalQualityIndicator);
+        lastUpdateTime = findViewById(R.id.lastUpdateTime);
 
         // Set PlotView colors
         setupPlotViewColors();
@@ -403,6 +420,15 @@ public class MainActivity extends AppCompatActivity implements IResponseListener
         if (exerciseSegmentDurationInput != null) exerciseSegmentDurationInput.setText("60");
         if (logStatusText != null) logStatusText.setText("Status: Ready");
         if (logDisplayText != null) logDisplayText.setText("Logs will be displayed here...");
+        
+        // Initialize HR/RR display with default values
+        if (heartRateValue != null) heartRateValue.setText("--");
+        if (respiratoryRateValue != null) respiratoryRateValue.setText("--");
+        if (signalQualityIndicator != null) {
+            signalQualityIndicator.setText("No Signal");
+            signalQualityIndicator.setTextColor(Color.parseColor("#9E9E9E"));
+        }
+        if (lastUpdateTime != null) lastUpdateTime.setText("--:--:--");
     }
 
     private void setupNotificationHandler() {
@@ -509,6 +535,56 @@ public class MainActivity extends AppCompatActivity implements IResponseListener
                 MainActivity.this.recordLog(message);
             }
         });
+    }
+    
+    private void setupVitalSignsProcessor() {
+        // Initialize vital signs processor with callback
+        vitalSignsProcessor = new VitalSignsProcessor(new VitalSignsProcessor.VitalSignsCallback() {
+            @Override
+            public void onHeartRateUpdate(int heartRate) {
+                mainHandler.post(() -> {
+                    if (heartRateValue != null) {
+                        heartRateValue.setText(String.valueOf(heartRate));
+                    }
+                    updateLastUpdateTime();
+                    recordLog("Heart Rate: " + heartRate + " BPM");
+                });
+            }
+
+            @Override
+            public void onRespiratoryRateUpdate(int respiratoryRate) {
+                mainHandler.post(() -> {
+                    if (respiratoryRateValue != null) {
+                        respiratoryRateValue.setText(String.valueOf(respiratoryRate));
+                    }
+                    updateLastUpdateTime();
+                    recordLog("Respiratory Rate: " + respiratoryRate + " RPM");
+                });
+            }
+
+            @Override
+            public void onSignalQualityUpdate(VitalSignsProcessor.SignalQuality quality) {
+                mainHandler.post(() -> {
+                    if (signalQualityIndicator != null) {
+                        signalQualityIndicator.setText(quality.getDisplayName());
+                        signalQualityIndicator.setTextColor(Color.parseColor(quality.getColor()));
+                    }
+                    recordLog("Signal Quality: " + quality.getDisplayName());
+                });
+            }
+        });
+        
+        // Set the vital signs processor in NotificationHandler
+        NotificationHandler.setVitalSignsProcessor(vitalSignsProcessor);
+        
+        recordLog("Vital Signs Processor initialized");
+    }
+    
+    private void updateLastUpdateTime() {
+        if (lastUpdateTime != null) {
+            SimpleDateFormat sdf = new SimpleDateFormat("HH:mm:ss", Locale.getDefault());
+            lastUpdateTime.setText(sdf.format(new Date()));
+        }
     }
 
     private void setupBottomNavigation() {
@@ -1278,6 +1354,9 @@ public class MainActivity extends AppCompatActivity implements IResponseListener
                 measurementTimer.cancel();
                 measurementTimer = null;
             }
+            
+            // Clear HR/RR display values
+            clearVitalSignsDisplay();
 
             updateMeasurementUI(false);
             updateMeasurementStatus("Measurement stopped");
@@ -1287,6 +1366,18 @@ public class MainActivity extends AppCompatActivity implements IResponseListener
 
             Toast.makeText(this, "Online measurement stopped", Toast.LENGTH_SHORT).show();
         }
+    }
+    
+    private void clearVitalSignsDisplay() {
+        mainHandler.post(() -> {
+            if (heartRateValue != null) heartRateValue.setText("--");
+            if (respiratoryRateValue != null) respiratoryRateValue.setText("--");
+            if (signalQualityIndicator != null) {
+                signalQualityIndicator.setText("No Signal");
+                signalQualityIndicator.setTextColor(Color.parseColor("#9E9E9E"));
+            }
+            if (lastUpdateTime != null) lastUpdateTime.setText("--:--:--");
+        });
     }
 
     private void startMeasurementTimer(int totalTime) {
@@ -2406,6 +2497,12 @@ public class MainActivity extends AppCompatActivity implements IResponseListener
         // Clean up resources
         if (mainHandler != null) {
             mainHandler.removeCallbacksAndMessages(null);
+        }
+        
+        // Clean up vital signs processor
+        if (vitalSignsProcessor != null) {
+            vitalSignsProcessor.reset();
+            vitalSignsProcessor = null;
         }
 
         if (measurementTimer != null) {

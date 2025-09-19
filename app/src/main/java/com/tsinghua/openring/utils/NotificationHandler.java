@@ -127,6 +127,13 @@ public class NotificationHandler {
     }
 
     private static LogRecorder logRecorder;
+    private static VitalSignsProcessor vitalSignsProcessor;
+
+    // Add method to set vital signs processor
+    public static void setVitalSignsProcessor(VitalSignsProcessor processor) {
+        vitalSignsProcessor = processor;
+        recordLog("VitalSignsProcessor connected to NotificationHandler");
+    }
 
     // Add method to set log recorder
     public static void setLogRecorder(LogRecorder recorder) {
@@ -224,6 +231,12 @@ public class NotificationHandler {
 
             isMeasuring = true;
             isMeasurementOngoing = true; // New: mark measurement in progress
+            
+            // Reset vital signs processor for new measurement
+            if (vitalSignsProcessor != null) {
+                vitalSignsProcessor.reset();
+            }
+            
             deviceCommandCallback.onMeasurementStarted();
 
             // New: Start measurement monitor timer (but don't auto stop)
@@ -1028,6 +1041,12 @@ public class NotificationHandler {
 
             // Update real-time chart display
             updateRealtimeCharts(green, red, ir, accX, accY, accZ, gyroX, gyroY, gyroZ, temp0, temp1, temp2);
+            
+            // Feed data to vital signs processor
+            if (vitalSignsProcessor != null) {
+                long timestamp = System.currentTimeMillis();
+                vitalSignsProcessor.addDataPoint(green, ir, accX, accY, accZ, timestamp);
+            }
 
             Log.v(TAG, String.format("Realtime point: G:%d, R:%d, IR:%d, AccX:%d, AccY:%d, AccZ:%d, GyroX:%d, GyroY:%d, GyroZ:%d, T0:%d, T1:%d, T2:%d",
                     green, red, ir, accX, accY, accZ, gyroX, gyroY, gyroZ, temp0, temp1, temp2));
