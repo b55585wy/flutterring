@@ -87,3 +87,4 @@
 # Keep method channel classes
 -keep class com.tsinghua.openring_flutter.** { *; }
 
+
