@@ -1,0 +1,356 @@
+# 🎯 OpenRing Flutter - 下一步计划
+
+**当前状态**: Platform Channel 集成完成，正在测试
+
+---
+
+## ✅ 已完成 (Phase 1 & 2)
+
+### **Phase 1: 精致 UI 设计** ✅
+- [x] Material Design 3 主题
+- [x] 4 个核心页面（仪表盘、测量、历史、设置）
+- [x] 渐变色卡片和动画效果
+- [x] 底部导航栏
+- [x] 波形图表框架
+
+### **Phase 2: Platform Channel 集成** ✅
+- [x] 复制 BLE 相关 Java 代码
+- [x] 复制 AAR 库 (ChipletRing1.0.81.aar)
+- [x] 创建 MainActivity.kt
+- [x] 实现 Method Channel (扫描、连接、断开)
+- [x] 实现 Event Channel (设备发现、连接状态、数据)
+- [x] 创建 Dart 端 Platform接口 (ring_platform.dart)
+- [x] UI 集成 BLE 功能（扫描按钮、设备列表、连接状态）
+
+---
+
+## 🔄 当前测试中
+
+### **功能测试清单**
+```
+[ ] 点击"扫描"按钮
+    └─ 应该显示底部设备列表
+    └─ 应该看到扫描中的进度指示器
+    
+[ ] 设备扫描
+    └─ 找到蓝牙设备后应该显示在列表中
+    └─ 显示设备名称和 MAC 地址
+    
+[ ] 连接设备
+    └─ 点击设备应该尝试连接
+    └─ 连接成功后卡片变绿色
+    └─ 显示"戒指已连接"
+    
+[ ] 断开连接
+    └─ 点击"断开"按钮
+    └─ 卡片变回红色
+    └─ 显示"戒指未连接"
+```
+
+---
+
+## 🎯 Phase 3: 数据流集成 (下一步)
+
+### **3.1 实时数据接收**
+```kotlin
+// MainActivity.kt 需要完善
+override fun saveData(data: String) {
+    // 1. 解析 16 进制数据
+    // 2. 提取 PPG, ACC, GYRO, TEMP 数据
+    // 3. 发送到 Flutter
+    
+    handler.post {
+        sendEvent(mapOf(
+            "type" to "sensorData",
+            "ppgGreen" to ppgGreen,
+            "ppgRed" to ppgRed,
+            "ppgIr" to ppgIr,
+            "accX" to accX,
+            "accY" to accY,
+            "accZ" to accZ,
+            // ...
+        ))
+    }
+}
+```
+
+### **3.2 数据解析服务**
+```dart
+// lib/services/data_parser.dart
+class DataParser {
+  static Map<String, dynamic> parseHexData(String hexString) {
+    // 解析 16 进制字符串
+    // 提取各通道数据
+    // 返回结构化数据
+  }
+}
+```
+
+### **3.3 实时数据状态管理**
+```dart
+// lib/providers/sensor_data_provider.dart
+final sensorDataProvider = StateNotifierProvider<SensorDataNotifier, SensorData>((ref) {
+  return SensorDataNotifier();
+});
+
+class SensorDataNotifier extends StateNotifier<SensorData> {
+  SensorDataNotifier() : super(SensorData.initial()) {
+    _listenToSensorData();
+  }
+  
+  void _listenToSensorData() {
+    RingPlatform.eventStream.listen((event) {
+      if (event['type'] == 'sensorData') {
+        // 更新状态
+        state = state.copyWith(
+          ppgGreen: event['ppgGreen'],
+          // ...
+        );
+      }
+    });
+  }
+}
+```
+
+### **3.4 更新测量页面**
+```dart
+// lib/pages/measurement_page.dart
+class _MeasurementPageState extends ConsumerState<MeasurementPage> {
+  @override
+  Widget build(BuildContext context) {
+    final sensorData = ref.watch(sensorDataProvider);
+    
+    return Scaffold(
+      body: Column(
+        children: [
+          // 显示真实心率数据
+          _buildVitalSignCard('心率', sensorData.heartRate, 'BPM', ...),
+          
+          // 显示真实波形
+          CustomPaint(
+            painter: WaveformPainter(data: sensorData.ppgGreenBuffer),
+          ),
+        ],
+      ),
+    );
+  }
+}
+```
+
+---
+
+## 🎯 Phase 4: 高级功能
+
+### **4.1 VitalSignsProcessor 集成**
+```dart
+// lib/services/vital_signs_processor.dart
+class VitalSignsProcessor {
+  final ppgBuffer = <double>[];
+  final accBuffer = <double>[];
+  
+  void addSample(Map<String, dynamic> sample) {
+    ppgBuffer.add(sample['ppgGreen']);
+    accBuffer.add(sample['accX']);
+    
+    if (ppgBuffer.length >= 200) { // 8 seconds @ 25Hz
+      final heartRate = calculateHeartRate(ppgBuffer);
+      // 通知 UI 更新
+    }
+  }
+  
+  int calculateHeartRate(List<double> ppgData) {
+    // 峰值检测算法
+    // 计算心率
+  }
+}
+```
+
+### **4.2 波形绘制优化**
+```dart
+// lib/widgets/realtime_waveform.dart
+class RealtimeWaveform extends StatefulWidget {
+  final Stream<List<double>> dataStream;
+  final Color color;
+  
+  // 使用 CircularBuffer 优化性能
+  // 实现滚动效果
+  // 60 FPS 刷新率
+}
+```
+
+### **4.3 离线录制管理**
+```
+[ ] 发送离线录制命令到戒指
+[ ] 实现录制状态监控
+[ ] 文件列表获取
+[ ] 文件下载功能
+[ ] 本地文件回放
+```
+
+---
+
+## 📋 已知问题与TODO
+
+### **需要完善的功能**
+```kotlin
+// MainActivity.kt
+1. [ ] 实现 onDeviceFound 的详细信息提取
+2. [ ] 实现 saveData 的数据解析
+3. [ ] 实现 startLiveMeasurement
+4. [ ] 实现 getConnectedDevice
+5. [ ] 添加错误处理和日志
+```
+
+### **UI 增强**
+```dart
+1. [ ] 添加加载状态指示器
+2. [ ] 添加错误提示对话框
+3. [ ] 优化设备列表 UI
+4. [ ] 添加权限请求（蓝牙、位置）
+5. [ ] 添加重连机制
+```
+
+---
+
+## 🧪 测试计划
+
+### **集成测试**
+```
+1. 蓝牙扫描测试
+   - 权限检查
+   - 设备发现
+   - 超时处理
+   
+2. 连接测试
+   - 连接成功
+   - 连接失败
+   - 自动重连
+   
+3. 数据流测试
+   - 实时数据接收
+   - 数据解析正确性
+   - 性能测试（采样率）
+```
+
+---
+
+## 📊 性能优化目标
+
+### **目标指标**
+```
+帧率: 60 FPS (UI)
+数据延迟: < 100ms
+内存占用: < 100MB
+电池消耗: < 5% / hour
+```
+
+### **优化策略**
+```
+1. 使用 Isolate 处理数据解析
+2. CircularBuffer 管理波形数据
+3. RepaintBoundary 优化绘制
+4. 懒加载历史记录
+5. 图片缓存
+```
+
+---
+
+## 🎨 UI 待优化
+
+### **仪表盘**
+```
+[ ] 添加最近测量数据
+[ ] 添加健康趋势图表
+[ ] 添加每日目标进度
+```
+
+### **测量页面**
+```
+[ ] 真实波形替换模拟数据
+[ ] 添加数据导出按钮
+[ ] 添加测量记录保存
+[ ] 添加实时统计信息
+```
+
+### **历史页面**
+```
+[ ] 添加日期筛选
+[ ] 添加数据可视化图表
+[ ] 添加详情页面
+[ ] 添加数据对比功能
+```
+
+---
+
+## 🔐 权限管理
+
+### **需要的权限**
+```xml
+<uses-permission android:name="android.permission.BLUETOOTH"/>
+<uses-permission android:name="android.permission.BLUETOOTH_ADMIN"/>
+<uses-permission android:name="android.permission.BLUETOOTH_SCAN"/>
+<uses-permission android:name="android.permission.BLUETOOTH_CONNECT"/>
+<uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+```
+
+### **运行时权限请求**
+```dart
+// lib/services/permission_service.dart
+class PermissionService {
+  static Future<bool> requestBluetoothPermissions() async {
+    // 请求蓝牙权限
+    // 请求位置权限（Android 需要）
+  }
+}
+```
+
+---
+
+## 📖 文档
+
+### **已创建**
+- [x] README.md - 项目概述
+- [x] FEATURES.md - 功能特性详解
+- [x] NEXT_STEPS.md - 下一步计划 (本文档)
+
+### **待创建**
+- [ ] API_REFERENCE.md - Platform Channel API 文档
+- [ ] ARCHITECTURE.md - 架构设计文档
+- [ ] TROUBLESHOOTING.md - 故障排除指南
+
+---
+
+## 🎯 里程碑
+
+### **Milestone 1: 基础功能** ✅ (已完成)
+- UI 设计
+- Platform Channel 集成
+- BLE 扫描和连接
+
+### **Milestone 2: 数据集成** 🔄 (进行中)
+- 实时数据接收
+- 数据解析
+- UI 数据绑定
+
+### **Milestone 3: 核心算法** ⏳
+- 心率计算
+- 呼吸率计算
+- 信号质量评估
+
+### **Milestone 4: 高级功能** ⏳
+- 离线录制
+- 文件管理
+- 数据导出
+
+### **Milestone 5: 优化发布** ⏳
+- 性能优化
+- 错误处理
+- 用户测试
+- 发布准备
+
+---
+
+**当前进度**: **60%** ✅
+
+**下一步**: 等待 Platform Channel 测试结果，然后实现数据流集成！🚀
+

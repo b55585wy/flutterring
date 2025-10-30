@@ -1,0 +1,25 @@
+{
+    // 设置默认终端为 PowerShell 5.1（Windows PowerShell）
+    "terminal.integrated.defaultProfile.windows": "Windows PowerShell",
+    
+    // 或者取消上面的注释，使用下面这行来设置为 CMD
+    // "terminal.integrated.defaultProfile.windows": "Command Prompt",
+    
+    // 终端配置
+    "terminal.integrated.profiles.windows": {
+        "Windows PowerShell": {
+            "path": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+            "icon": "terminal-powershell"
+        },
+        "Command Prompt": {
+            "path": "C:\\Windows\\System32\\cmd.exe",
+            "icon": "terminal-cmd"
+        },
+        "PowerShell 7": {
+            "path": "C:\\Program Files\\PowerShell\\7\\pwsh.exe",
+            "icon": "terminal-powershell"
+        }
+    }
+}
+
+
