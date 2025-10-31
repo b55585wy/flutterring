@@ -59,7 +59,7 @@ mixin _$BleEvent {
         connectionStateChanged,
     required TResult Function(List<Sample> samples, int timestamp) sampleBatch,
     required TResult Function(
-            int? heartRate, int? respiratoryRate, double signalQuality)
+            int? heartRate, int? respiratoryRate, SignalQuality quality)
         vitalSignsUpdate,
     required TResult Function(List<RingFile> files) fileListReceived,
     required TResult Function(String fileName, int currentBytes, int totalBytes)
@@ -83,7 +83,7 @@ mixin _$BleEvent {
         connectionStateChanged,
     TResult? Function(List<Sample> samples, int timestamp)? sampleBatch,
     TResult? Function(
-            int? heartRate, int? respiratoryRate, double signalQuality)?
+            int? heartRate, int? respiratoryRate, SignalQuality quality)?
         vitalSignsUpdate,
     TResult? Function(List<RingFile> files)? fileListReceived,
     TResult? Function(String fileName, int currentBytes, int totalBytes)?
@@ -106,7 +106,7 @@ mixin _$BleEvent {
         connectionStateChanged,
     TResult Function(List<Sample> samples, int timestamp)? sampleBatch,
     TResult Function(
-            int? heartRate, int? respiratoryRate, double signalQuality)?
+            int? heartRate, int? respiratoryRate, SignalQuality quality)?
         vitalSignsUpdate,
     TResult Function(List<RingFile> files)? fileListReceived,
     TResult Function(String fileName, int currentBytes, int totalBytes)?
@@ -306,7 +306,7 @@ class _$DeviceFoundEventImpl implements DeviceFoundEvent {
         connectionStateChanged,
     required TResult Function(List<Sample> samples, int timestamp) sampleBatch,
     required TResult Function(
-            int? heartRate, int? respiratoryRate, double signalQuality)
+            int? heartRate, int? respiratoryRate, SignalQuality quality)
         vitalSignsUpdate,
     required TResult Function(List<RingFile> files) fileListReceived,
     required TResult Function(String fileName, int currentBytes, int totalBytes)
@@ -333,7 +333,7 @@ class _$DeviceFoundEventImpl implements DeviceFoundEvent {
         connectionStateChanged,
     TResult? Function(List<Sample> samples, int timestamp)? sampleBatch,
     TResult? Function(
-            int? heartRate, int? respiratoryRate, double signalQuality)?
+            int? heartRate, int? respiratoryRate, SignalQuality quality)?
         vitalSignsUpdate,
     TResult? Function(List<RingFile> files)? fileListReceived,
     TResult? Function(String fileName, int currentBytes, int totalBytes)?
@@ -359,7 +359,7 @@ class _$DeviceFoundEventImpl implements DeviceFoundEvent {
         connectionStateChanged,
     TResult Function(List<Sample> samples, int timestamp)? sampleBatch,
     TResult Function(
-            int? heartRate, int? respiratoryRate, double signalQuality)?
+            int? heartRate, int? respiratoryRate, SignalQuality quality)?
         vitalSignsUpdate,
     TResult Function(List<RingFile> files)? fileListReceived,
     TResult Function(String fileName, int currentBytes, int totalBytes)?
@@ -531,7 +531,7 @@ class _$ScanCompletedEventImpl implements ScanCompletedEvent {
         connectionStateChanged,
     required TResult Function(List<Sample> samples, int timestamp) sampleBatch,
     required TResult Function(
-            int? heartRate, int? respiratoryRate, double signalQuality)
+            int? heartRate, int? respiratoryRate, SignalQuality quality)
         vitalSignsUpdate,
     required TResult Function(List<RingFile> files) fileListReceived,
     required TResult Function(String fileName, int currentBytes, int totalBytes)
@@ -558,7 +558,7 @@ class _$ScanCompletedEventImpl implements ScanCompletedEvent {
         connectionStateChanged,
     TResult? Function(List<Sample> samples, int timestamp)? sampleBatch,
     TResult? Function(
-            int? heartRate, int? respiratoryRate, double signalQuality)?
+            int? heartRate, int? respiratoryRate, SignalQuality quality)?
         vitalSignsUpdate,
     TResult? Function(List<RingFile> files)? fileListReceived,
     TResult? Function(String fileName, int currentBytes, int totalBytes)?
@@ -584,7 +584,7 @@ class _$ScanCompletedEventImpl implements ScanCompletedEvent {
         connectionStateChanged,
     TResult Function(List<Sample> samples, int timestamp)? sampleBatch,
     TResult Function(
-            int? heartRate, int? respiratoryRate, double signalQuality)?
+            int? heartRate, int? respiratoryRate, SignalQuality quality)?
         vitalSignsUpdate,
     TResult Function(List<RingFile> files)? fileListReceived,
     TResult Function(String fileName, int currentBytes, int totalBytes)?
@@ -792,7 +792,7 @@ class _$ConnectionStateChangedEventImpl implements ConnectionStateChangedEvent {
         connectionStateChanged,
     required TResult Function(List<Sample> samples, int timestamp) sampleBatch,
     required TResult Function(
-            int? heartRate, int? respiratoryRate, double signalQuality)
+            int? heartRate, int? respiratoryRate, SignalQuality quality)
         vitalSignsUpdate,
     required TResult Function(List<RingFile> files) fileListReceived,
     required TResult Function(String fileName, int currentBytes, int totalBytes)
@@ -819,7 +819,7 @@ class _$ConnectionStateChangedEventImpl implements ConnectionStateChangedEvent {
         connectionStateChanged,
     TResult? Function(List<Sample> samples, int timestamp)? sampleBatch,
     TResult? Function(
-            int? heartRate, int? respiratoryRate, double signalQuality)?
+            int? heartRate, int? respiratoryRate, SignalQuality quality)?
         vitalSignsUpdate,
     TResult? Function(List<RingFile> files)? fileListReceived,
     TResult? Function(String fileName, int currentBytes, int totalBytes)?
@@ -845,7 +845,7 @@ class _$ConnectionStateChangedEventImpl implements ConnectionStateChangedEvent {
         connectionStateChanged,
     TResult Function(List<Sample> samples, int timestamp)? sampleBatch,
     TResult Function(
-            int? heartRate, int? respiratoryRate, double signalQuality)?
+            int? heartRate, int? respiratoryRate, SignalQuality quality)?
         vitalSignsUpdate,
     TResult Function(List<RingFile> files)? fileListReceived,
     TResult Function(String fileName, int currentBytes, int totalBytes)?
@@ -1065,7 +1065,7 @@ class _$SampleBatchEventImpl implements SampleBatchEvent {
         connectionStateChanged,
     required TResult Function(List<Sample> samples, int timestamp) sampleBatch,
     required TResult Function(
-            int? heartRate, int? respiratoryRate, double signalQuality)
+            int? heartRate, int? respiratoryRate, SignalQuality quality)
         vitalSignsUpdate,
     required TResult Function(List<RingFile> files) fileListReceived,
     required TResult Function(String fileName, int currentBytes, int totalBytes)
@@ -1092,7 +1092,7 @@ class _$SampleBatchEventImpl implements SampleBatchEvent {
         connectionStateChanged,
     TResult? Function(List<Sample> samples, int timestamp)? sampleBatch,
     TResult? Function(
-            int? heartRate, int? respiratoryRate, double signalQuality)?
+            int? heartRate, int? respiratoryRate, SignalQuality quality)?
         vitalSignsUpdate,
     TResult? Function(List<RingFile> files)? fileListReceived,
     TResult? Function(String fileName, int currentBytes, int totalBytes)?
@@ -1118,7 +1118,7 @@ class _$SampleBatchEventImpl implements SampleBatchEvent {
         connectionStateChanged,
     TResult Function(List<Sample> samples, int timestamp)? sampleBatch,
     TResult Function(
-            int? heartRate, int? respiratoryRate, double signalQuality)?
+            int? heartRate, int? respiratoryRate, SignalQuality quality)?
         vitalSignsUpdate,
     TResult Function(List<RingFile> files)? fileListReceived,
     TResult Function(String fileName, int currentBytes, int totalBytes)?
@@ -1238,7 +1238,7 @@ abstract class _$$VitalSignsUpdateEventImplCopyWith<$Res> {
           $Res Function(_$VitalSignsUpdateEventImpl) then) =
       __$$VitalSignsUpdateEventImplCopyWithImpl<$Res>;
   @useResult
-  $Res call({int? heartRate, int? respiratoryRate, double signalQuality});
+  $Res call({int? heartRate, int? respiratoryRate, SignalQuality quality});
 }
 
 /// @nodoc
@@ -1256,7 +1256,7 @@ class __$$VitalSignsUpdateEventImplCopyWithImpl<$Res>
   $Res call({
     Object? heartRate = freezed,
     Object? respiratoryRate = freezed,
-    Object? signalQuality = null,
+    Object? quality = null,
   }) {
     return _then(_$VitalSignsUpdateEventImpl(
       heartRate: freezed == heartRate
@@ -1267,10 +1267,10 @@ class __$$VitalSignsUpdateEventImplCopyWithImpl<$Res>
           ? _value.respiratoryRate
           : respiratoryRate // ignore: cast_nullable_to_non_nullable
               as int?,
-      signalQuality: null == signalQuality
-          ? _value.signalQuality
-          : signalQuality // ignore: cast_nullable_to_non_nullable
-              as double,
+      quality: null == quality
+          ? _value.quality
+          : quality // ignore: cast_nullable_to_non_nullable
+              as SignalQuality,
     ));
   }
 }
@@ -1281,7 +1281,7 @@ class _$VitalSignsUpdateEventImpl implements VitalSignsUpdateEvent {
   const _$VitalSignsUpdateEventImpl(
       {this.heartRate,
       this.respiratoryRate,
-      required this.signalQuality,
+      required this.quality,
       final String? $type})
       : $type = $type ?? 'vitalSignsUpdate';
 
@@ -1293,14 +1293,14 @@ class _$VitalSignsUpdateEventImpl implements VitalSignsUpdateEvent {
   @override
   final int? respiratoryRate;
   @override
-  final double signalQuality;
+  final SignalQuality quality;
 
   @JsonKey(name: 'runtimeType')
   final String $type;
 
   @override
   String toString() {
-    return 'BleEvent.vitalSignsUpdate(heartRate: $heartRate, respiratoryRate: $respiratoryRate, signalQuality: $signalQuality)';
+    return 'BleEvent.vitalSignsUpdate(heartRate: $heartRate, respiratoryRate: $respiratoryRate, quality: $quality)';
   }
 
   @override
@@ -1312,14 +1312,13 @@ class _$VitalSignsUpdateEventImpl implements VitalSignsUpdateEvent {
                 other.heartRate == heartRate) &&
             (identical(other.respiratoryRate, respiratoryRate) ||
                 other.respiratoryRate == respiratoryRate) &&
-            (identical(other.signalQuality, signalQuality) ||
-                other.signalQuality == signalQuality));
+            (identical(other.quality, quality) || other.quality == quality));
   }
 
   @JsonKey(includeFromJson: false, includeToJson: false)
   @override
   int get hashCode =>
-      Object.hash(runtimeType, heartRate, respiratoryRate, signalQuality);
+      Object.hash(runtimeType, heartRate, respiratoryRate, quality);
 
   /// Create a copy of BleEvent
   /// with the given fields replaced by the non-null parameter values.
@@ -1341,7 +1340,7 @@ class _$VitalSignsUpdateEventImpl implements VitalSignsUpdateEvent {
         connectionStateChanged,
     required TResult Function(List<Sample> samples, int timestamp) sampleBatch,
     required TResult Function(
-            int? heartRate, int? respiratoryRate, double signalQuality)
+            int? heartRate, int? respiratoryRate, SignalQuality quality)
         vitalSignsUpdate,
     required TResult Function(List<RingFile> files) fileListReceived,
     required TResult Function(String fileName, int currentBytes, int totalBytes)
@@ -1355,7 +1354,7 @@ class _$VitalSignsUpdateEventImpl implements VitalSignsUpdateEvent {
     required TResult Function(int level) batteryLevelUpdated,
     required TResult Function(String message, String? code) error,
   }) {
-    return vitalSignsUpdate(heartRate, respiratoryRate, signalQuality);
+    return vitalSignsUpdate(heartRate, respiratoryRate, quality);
   }
 
   @override
@@ -1368,7 +1367,7 @@ class _$VitalSignsUpdateEventImpl implements VitalSignsUpdateEvent {
         connectionStateChanged,
     TResult? Function(List<Sample> samples, int timestamp)? sampleBatch,
     TResult? Function(
-            int? heartRate, int? respiratoryRate, double signalQuality)?
+            int? heartRate, int? respiratoryRate, SignalQuality quality)?
         vitalSignsUpdate,
     TResult? Function(List<RingFile> files)? fileListReceived,
     TResult? Function(String fileName, int currentBytes, int totalBytes)?
@@ -1381,7 +1380,7 @@ class _$VitalSignsUpdateEventImpl implements VitalSignsUpdateEvent {
     TResult? Function(int level)? batteryLevelUpdated,
     TResult? Function(String message, String? code)? error,
   }) {
-    return vitalSignsUpdate?.call(heartRate, respiratoryRate, signalQuality);
+    return vitalSignsUpdate?.call(heartRate, respiratoryRate, quality);
   }
 
   @override
@@ -1394,7 +1393,7 @@ class _$VitalSignsUpdateEventImpl implements VitalSignsUpdateEvent {
         connectionStateChanged,
     TResult Function(List<Sample> samples, int timestamp)? sampleBatch,
     TResult Function(
-            int? heartRate, int? respiratoryRate, double signalQuality)?
+            int? heartRate, int? respiratoryRate, SignalQuality quality)?
         vitalSignsUpdate,
     TResult Function(List<RingFile> files)? fileListReceived,
     TResult Function(String fileName, int currentBytes, int totalBytes)?
@@ -1409,7 +1408,7 @@ class _$VitalSignsUpdateEventImpl implements VitalSignsUpdateEvent {
     required TResult orElse(),
   }) {
     if (vitalSignsUpdate != null) {
-      return vitalSignsUpdate(heartRate, respiratoryRate, signalQuality);
+      return vitalSignsUpdate(heartRate, respiratoryRate, quality);
     }
     return orElse();
   }
@@ -1493,14 +1492,14 @@ abstract class VitalSignsUpdateEvent implements BleEvent {
   const factory VitalSignsUpdateEvent(
       {final int? heartRate,
       final int? respiratoryRate,
-      required final double signalQuality}) = _$VitalSignsUpdateEventImpl;
+      required final SignalQuality quality}) = _$VitalSignsUpdateEventImpl;
 
   factory VitalSignsUpdateEvent.fromJson(Map<String, dynamic> json) =
       _$VitalSignsUpdateEventImpl.fromJson;
 
   int? get heartRate;
   int? get respiratoryRate;
-  double get signalQuality;
+  SignalQuality get quality;
 
   /// Create a copy of BleEvent
   /// with the given fields replaced by the non-null parameter values.
@@ -1603,7 +1602,7 @@ class _$FileListReceivedEventImpl implements FileListReceivedEvent {
         connectionStateChanged,
     required TResult Function(List<Sample> samples, int timestamp) sampleBatch,
     required TResult Function(
-            int? heartRate, int? respiratoryRate, double signalQuality)
+            int? heartRate, int? respiratoryRate, SignalQuality quality)
         vitalSignsUpdate,
     required TResult Function(List<RingFile> files) fileListReceived,
     required TResult Function(String fileName, int currentBytes, int totalBytes)
@@ -1630,7 +1629,7 @@ class _$FileListReceivedEventImpl implements FileListReceivedEvent {
         connectionStateChanged,
     TResult? Function(List<Sample> samples, int timestamp)? sampleBatch,
     TResult? Function(
-            int? heartRate, int? respiratoryRate, double signalQuality)?
+            int? heartRate, int? respiratoryRate, SignalQuality quality)?
         vitalSignsUpdate,
     TResult? Function(List<RingFile> files)? fileListReceived,
     TResult? Function(String fileName, int currentBytes, int totalBytes)?
@@ -1656,7 +1655,7 @@ class _$FileListReceivedEventImpl implements FileListReceivedEvent {
         connectionStateChanged,
     TResult Function(List<Sample> samples, int timestamp)? sampleBatch,
     TResult Function(
-            int? heartRate, int? respiratoryRate, double signalQuality)?
+            int? heartRate, int? respiratoryRate, SignalQuality quality)?
         vitalSignsUpdate,
     TResult Function(List<RingFile> files)? fileListReceived,
     TResult Function(String fileName, int currentBytes, int totalBytes)?
@@ -1878,7 +1877,7 @@ class _$FileDownloadProgressEventImpl implements FileDownloadProgressEvent {
         connectionStateChanged,
     required TResult Function(List<Sample> samples, int timestamp) sampleBatch,
     required TResult Function(
-            int? heartRate, int? respiratoryRate, double signalQuality)
+            int? heartRate, int? respiratoryRate, SignalQuality quality)
         vitalSignsUpdate,
     required TResult Function(List<RingFile> files) fileListReceived,
     required TResult Function(String fileName, int currentBytes, int totalBytes)
@@ -1905,7 +1904,7 @@ class _$FileDownloadProgressEventImpl implements FileDownloadProgressEvent {
         connectionStateChanged,
     TResult? Function(List<Sample> samples, int timestamp)? sampleBatch,
     TResult? Function(
-            int? heartRate, int? respiratoryRate, double signalQuality)?
+            int? heartRate, int? respiratoryRate, SignalQuality quality)?
         vitalSignsUpdate,
     TResult? Function(List<RingFile> files)? fileListReceived,
     TResult? Function(String fileName, int currentBytes, int totalBytes)?
@@ -1931,7 +1930,7 @@ class _$FileDownloadProgressEventImpl implements FileDownloadProgressEvent {
         connectionStateChanged,
     TResult Function(List<Sample> samples, int timestamp)? sampleBatch,
     TResult Function(
-            int? heartRate, int? respiratoryRate, double signalQuality)?
+            int? heartRate, int? respiratoryRate, SignalQuality quality)?
         vitalSignsUpdate,
     TResult Function(List<RingFile> files)? fileListReceived,
     TResult Function(String fileName, int currentBytes, int totalBytes)?
@@ -2145,7 +2144,7 @@ class _$FileDownloadCompletedEventImpl implements FileDownloadCompletedEvent {
         connectionStateChanged,
     required TResult Function(List<Sample> samples, int timestamp) sampleBatch,
     required TResult Function(
-            int? heartRate, int? respiratoryRate, double signalQuality)
+            int? heartRate, int? respiratoryRate, SignalQuality quality)
         vitalSignsUpdate,
     required TResult Function(List<RingFile> files) fileListReceived,
     required TResult Function(String fileName, int currentBytes, int totalBytes)
@@ -2172,7 +2171,7 @@ class _$FileDownloadCompletedEventImpl implements FileDownloadCompletedEvent {
         connectionStateChanged,
     TResult? Function(List<Sample> samples, int timestamp)? sampleBatch,
     TResult? Function(
-            int? heartRate, int? respiratoryRate, double signalQuality)?
+            int? heartRate, int? respiratoryRate, SignalQuality quality)?
         vitalSignsUpdate,
     TResult? Function(List<RingFile> files)? fileListReceived,
     TResult? Function(String fileName, int currentBytes, int totalBytes)?
@@ -2198,7 +2197,7 @@ class _$FileDownloadCompletedEventImpl implements FileDownloadCompletedEvent {
         connectionStateChanged,
     TResult Function(List<Sample> samples, int timestamp)? sampleBatch,
     TResult Function(
-            int? heartRate, int? respiratoryRate, double signalQuality)?
+            int? heartRate, int? respiratoryRate, SignalQuality quality)?
         vitalSignsUpdate,
     TResult Function(List<RingFile> files)? fileListReceived,
     TResult Function(String fileName, int currentBytes, int totalBytes)?
@@ -2423,7 +2422,7 @@ class _$RecordingStateChangedEventImpl implements RecordingStateChangedEvent {
         connectionStateChanged,
     required TResult Function(List<Sample> samples, int timestamp) sampleBatch,
     required TResult Function(
-            int? heartRate, int? respiratoryRate, double signalQuality)
+            int? heartRate, int? respiratoryRate, SignalQuality quality)
         vitalSignsUpdate,
     required TResult Function(List<RingFile> files) fileListReceived,
     required TResult Function(String fileName, int currentBytes, int totalBytes)
@@ -2450,7 +2449,7 @@ class _$RecordingStateChangedEventImpl implements RecordingStateChangedEvent {
         connectionStateChanged,
     TResult? Function(List<Sample> samples, int timestamp)? sampleBatch,
     TResult? Function(
-            int? heartRate, int? respiratoryRate, double signalQuality)?
+            int? heartRate, int? respiratoryRate, SignalQuality quality)?
         vitalSignsUpdate,
     TResult? Function(List<RingFile> files)? fileListReceived,
     TResult? Function(String fileName, int currentBytes, int totalBytes)?
@@ -2477,7 +2476,7 @@ class _$RecordingStateChangedEventImpl implements RecordingStateChangedEvent {
         connectionStateChanged,
     TResult Function(List<Sample> samples, int timestamp)? sampleBatch,
     TResult Function(
-            int? heartRate, int? respiratoryRate, double signalQuality)?
+            int? heartRate, int? respiratoryRate, SignalQuality quality)?
         vitalSignsUpdate,
     TResult Function(List<RingFile> files)? fileListReceived,
     TResult Function(String fileName, int currentBytes, int totalBytes)?
@@ -2677,7 +2676,7 @@ class _$RssiUpdatedEventImpl implements RssiUpdatedEvent {
         connectionStateChanged,
     required TResult Function(List<Sample> samples, int timestamp) sampleBatch,
     required TResult Function(
-            int? heartRate, int? respiratoryRate, double signalQuality)
+            int? heartRate, int? respiratoryRate, SignalQuality quality)
         vitalSignsUpdate,
     required TResult Function(List<RingFile> files) fileListReceived,
     required TResult Function(String fileName, int currentBytes, int totalBytes)
@@ -2704,7 +2703,7 @@ class _$RssiUpdatedEventImpl implements RssiUpdatedEvent {
         connectionStateChanged,
     TResult? Function(List<Sample> samples, int timestamp)? sampleBatch,
     TResult? Function(
-            int? heartRate, int? respiratoryRate, double signalQuality)?
+            int? heartRate, int? respiratoryRate, SignalQuality quality)?
         vitalSignsUpdate,
     TResult? Function(List<RingFile> files)? fileListReceived,
     TResult? Function(String fileName, int currentBytes, int totalBytes)?
@@ -2730,7 +2729,7 @@ class _$RssiUpdatedEventImpl implements RssiUpdatedEvent {
         connectionStateChanged,
     TResult Function(List<Sample> samples, int timestamp)? sampleBatch,
     TResult Function(
-            int? heartRate, int? respiratoryRate, double signalQuality)?
+            int? heartRate, int? respiratoryRate, SignalQuality quality)?
         vitalSignsUpdate,
     TResult Function(List<RingFile> files)? fileListReceived,
     TResult Function(String fileName, int currentBytes, int totalBytes)?
@@ -2929,7 +2928,7 @@ class _$BatteryLevelUpdatedEventImpl implements BatteryLevelUpdatedEvent {
         connectionStateChanged,
     required TResult Function(List<Sample> samples, int timestamp) sampleBatch,
     required TResult Function(
-            int? heartRate, int? respiratoryRate, double signalQuality)
+            int? heartRate, int? respiratoryRate, SignalQuality quality)
         vitalSignsUpdate,
     required TResult Function(List<RingFile> files) fileListReceived,
     required TResult Function(String fileName, int currentBytes, int totalBytes)
@@ -2956,7 +2955,7 @@ class _$BatteryLevelUpdatedEventImpl implements BatteryLevelUpdatedEvent {
         connectionStateChanged,
     TResult? Function(List<Sample> samples, int timestamp)? sampleBatch,
     TResult? Function(
-            int? heartRate, int? respiratoryRate, double signalQuality)?
+            int? heartRate, int? respiratoryRate, SignalQuality quality)?
         vitalSignsUpdate,
     TResult? Function(List<RingFile> files)? fileListReceived,
     TResult? Function(String fileName, int currentBytes, int totalBytes)?
@@ -2982,7 +2981,7 @@ class _$BatteryLevelUpdatedEventImpl implements BatteryLevelUpdatedEvent {
         connectionStateChanged,
     TResult Function(List<Sample> samples, int timestamp)? sampleBatch,
     TResult Function(
-            int? heartRate, int? respiratoryRate, double signalQuality)?
+            int? heartRate, int? respiratoryRate, SignalQuality quality)?
         vitalSignsUpdate,
     TResult Function(List<RingFile> files)? fileListReceived,
     TResult Function(String fileName, int currentBytes, int totalBytes)?
@@ -3186,7 +3185,7 @@ class _$BleErrorEventImpl implements BleErrorEvent {
         connectionStateChanged,
     required TResult Function(List<Sample> samples, int timestamp) sampleBatch,
     required TResult Function(
-            int? heartRate, int? respiratoryRate, double signalQuality)
+            int? heartRate, int? respiratoryRate, SignalQuality quality)
         vitalSignsUpdate,
     required TResult Function(List<RingFile> files) fileListReceived,
     required TResult Function(String fileName, int currentBytes, int totalBytes)
@@ -3213,7 +3212,7 @@ class _$BleErrorEventImpl implements BleErrorEvent {
         connectionStateChanged,
     TResult? Function(List<Sample> samples, int timestamp)? sampleBatch,
     TResult? Function(
-            int? heartRate, int? respiratoryRate, double signalQuality)?
+            int? heartRate, int? respiratoryRate, SignalQuality quality)?
         vitalSignsUpdate,
     TResult? Function(List<RingFile> files)? fileListReceived,
     TResult? Function(String fileName, int currentBytes, int totalBytes)?
@@ -3239,7 +3238,7 @@ class _$BleErrorEventImpl implements BleErrorEvent {
         connectionStateChanged,
     TResult Function(List<Sample> samples, int timestamp)? sampleBatch,
     TResult Function(
-            int? heartRate, int? respiratoryRate, double signalQuality)?
+            int? heartRate, int? respiratoryRate, SignalQuality quality)?
         vitalSignsUpdate,
     TResult Function(List<RingFile> files)? fileListReceived,
     TResult Function(String fileName, int currentBytes, int totalBytes)?

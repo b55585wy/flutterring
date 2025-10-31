@@ -85,7 +85,7 @@ _$VitalSignsUpdateEventImpl _$$VitalSignsUpdateEventImplFromJson(
     _$VitalSignsUpdateEventImpl(
       heartRate: (json['heartRate'] as num?)?.toInt(),
       respiratoryRate: (json['respiratoryRate'] as num?)?.toInt(),
-      signalQuality: (json['signalQuality'] as num).toDouble(),
+      quality: $enumDecode(_$SignalQualityEnumMap, json['quality']),
       $type: json['runtimeType'] as String?,
     );
 
@@ -94,9 +94,17 @@ Map<String, dynamic> _$$VitalSignsUpdateEventImplToJson(
     <String, dynamic>{
       'heartRate': instance.heartRate,
       'respiratoryRate': instance.respiratoryRate,
-      'signalQuality': instance.signalQuality,
+      'quality': _$SignalQualityEnumMap[instance.quality]!,
       'runtimeType': instance.$type,
     };
+
+const _$SignalQualityEnumMap = {
+  SignalQuality.excellent: 'excellent',
+  SignalQuality.good: 'good',
+  SignalQuality.fair: 'fair',
+  SignalQuality.poor: 'poor',
+  SignalQuality.noSignal: 'noSignal',
+};
 
 _$FileListReceivedEventImpl _$$FileListReceivedEventImplFromJson(
         Map<String, dynamic> json) =>
