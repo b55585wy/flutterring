@@ -270,26 +270,6 @@ class _MeasurementPageState extends State<MeasurementPage>
 
             const SizedBox(height: 24),
 
-            // 数据统计
-            if (_isRecording && _sampleCount > 0)
-              Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.analytics_outlined, size: 18),
-                      const SizedBox(width: 8),
-                      Text(
-                        '已接收 $_sampleCount 个样本',
-                        style: const TextStyle(fontSize: 14),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            
-            if (_isRecording && _sampleCount > 0) const SizedBox(height: 16),
-            
             // 控制按钮
             Row(
               children: [

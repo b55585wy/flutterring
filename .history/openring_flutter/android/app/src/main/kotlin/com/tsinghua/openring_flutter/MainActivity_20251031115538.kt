@@ -493,63 +493,8 @@ class MainActivity: FlutterActivity(), IResponseListener {
     
     override fun appRefresh(systemControlBean: com.lm.sdk.mode.SystemControlBean?) {}
     
-    // 启动在线测量
-    private fun startLiveMeasurement(duration: Int, result: MethodChannel.Result) {
-        try {
-            android.util.Log.d("OpenRing", "开始在线测量，时长: $duration 秒")
-            
-            // 设置测量状态
-            isMeasuring = true
-            sampleBuffer.clear()
-            
-            // 发送启动测量命令到戒指
-            // 0xC4 是启动实时数据流的命令（参考原项目）
-            val startCmd = byteArrayOf(0xC4.toByte())
-            BLEService.sendCmd(startCmd)
-            
-            android.util.Log.d("OpenRing", "已发送启动测量命令")
-            
-            // 自动停止测量（可选）
-            if (duration > 0) {
-                handler.postDelayed({
-                    stopMeasurement(null)
-                }, (duration * 1000).toLong())
-            }
-            
-            result.success(null)
-        } catch (e: Exception) {
-            android.util.Log.e("OpenRing", "启动测量失败: ${e.message}", e)
-            result.error("START_MEASUREMENT_ERROR", e.message, null)
-        }
-    }
-    
-    // 停止测量
-    private fun stopMeasurement(result: MethodChannel.Result?) {
-        try {
-            android.util.Log.d("OpenRing", "停止在线测量")
-            
-            // 发送停止测量命令到戒指
-            // 0xC5 是停止实时数据流的命令（参考原项目）
-            val stopCmd = byteArrayOf(0xC5.toByte())
-            BLEService.sendCmd(stopCmd)
-            
-            // 清除测量状态
-            isMeasuring = false
-            sampleBuffer.clear()
-            
-            android.util.Log.d("OpenRing", "已发送停止测量命令")
-            
-            result?.success(null)
-        } catch (e: Exception) {
-            android.util.Log.e("OpenRing", "停止测量失败: ${e.message}", e)
-            result?.error("STOP_MEASUREMENT_ERROR", e.message, null)
-        }
-    }
-    
     override fun onDestroy() {
         super.onDestroy()
-        isMeasuring = false
-        sampleBuffer.clear()
         stopScan()
         LocalBroadcastManager.getInstance(this).unregisterReceiver(connectionStateReceiver)
         methodChannel?.setMethodCallHandler(null)

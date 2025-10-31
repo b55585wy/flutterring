@@ -270,26 +270,6 @@ class _MeasurementPageState extends State<MeasurementPage>
 
             const SizedBox(height: 24),
 
-            // 数据统计
-            if (_isRecording && _sampleCount > 0)
-              Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.analytics_outlined, size: 18),
-                      const SizedBox(width: 8),
-                      Text(
-                        '已接收 $_sampleCount 个样本',
-                        style: const TextStyle(fontSize: 14),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            
-            if (_isRecording && _sampleCount > 0) const SizedBox(height: 16),
-            
             // 控制按钮
             Row(
               children: [
@@ -300,52 +280,20 @@ class _MeasurementPageState extends State<MeasurementPage>
                     _isRecording
                         ? const Color(0xFFEF4444)
                         : const Color(0xFF10B981),
-                    () async {
-                      if (_isRecording) {
-                        // 停止测量
-                        try {
-                          await RingPlatform.stopMeasurement();
-                          setState(() {
-                            _isRecording = false;
-                            _heartRate = 0;
-                            _respiratoryRate = 0;
-                            _signalQuality = '无信号';
-                            _ppgGreenData.clear();
-                            _sampleCount = 0;
-                          });
-                          if (mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('测量已停止')),
-                            );
-                          }
-                        } catch (e) {
-                          if (mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text('停止测量失败: $e')),
-                            );
-                          }
+                    () {
+                      setState(() {
+                        _isRecording = !_isRecording;
+                        if (_isRecording) {
+                          // 模拟数据
+                          _heartRate = 72;
+                          _respiratoryRate = 16;
+                          _signalQuality = '优秀';
+                        } else {
+                          _heartRate = 0;
+                          _respiratoryRate = 0;
+                          _signalQuality = '无信号';
                         }
-                      } else {
-                        // 开始测量
-                        try {
-                          await RingPlatform.startLiveMeasurement(duration: 60);
-                          setState(() {
-                            _isRecording = true;
-                            _sampleCount = 0;
-                          });
-                          if (mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('测量已开始，时长60秒')),
-                            );
-                          }
-                        } catch (e) {
-                          if (mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text('启动测量失败: $e')),
-                            );
-                          }
-                        }
-                      }
+                      });
                     },
                   ),
                 ),

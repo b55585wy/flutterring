@@ -257,106 +257,13 @@ class MainActivity: FlutterActivity(), IResponseListener {
         }
     }
     
-    private var isMeasuring = false
-    private val sampleBuffer = mutableListOf<Map<String, Any>>()
-    
     private fun handleDataReceived(data: ByteArray) {
-        // 如果不在测量状态，忽略数据
-        if (!isMeasuring) return
-        
-        try {
-            // 解析 BLE 数据包为 Sample
-            // 数据包格式（参考原项目）：每个样本 36 字节
-            // 12 个传感器值，每个 3 字节（24 bit）
-            val samples = parseSamples(data)
-            
-            if (samples.isNotEmpty()) {
-                sampleBuffer.addAll(samples)
-                
-                // 每积累 25 个样本（约 1 秒数据，25Hz），发送一次批次
-                if (sampleBuffer.size >= 25) {
-                    handler.post {
-                        sendEvent(mapOf(
-                            "type" to "sampleBatch",
-                            "data" to mapOf(
-                                "samples" to sampleBuffer.toList(),
-                                "timestamp" to System.currentTimeMillis()
-                            )
-                        ))
-                    }
-                    sampleBuffer.clear()
-                }
-            }
-        } catch (e: Exception) {
-            android.util.Log.e("OpenRing", "数据解析失败: ${e.message}", e)
+        handler.post {
+            sendEvent(mapOf(
+                "type" to "rawData",
+                "data" to data.joinToString("") { "%02x".format(it) }
+            ))
         }
-    }
-    
-    private fun parseSamples(data: ByteArray): List<Map<String, Any>> {
-        val samples = mutableListOf<Map<String, Any>>()
-        
-        // 每个样本 36 字节（12 个传感器 × 3 字节）
-        val bytesPerSample = 36
-        val numSamples = data.size / bytesPerSample
-        
-        for (i in 0 until numSamples) {
-            val offset = i * bytesPerSample
-            
-            try {
-                // 解析 12 个传感器值（每个 3 字节，24 bit 有符号整数）
-                val green = bytes24ToInt(data, offset + 0)
-                val red = bytes24ToInt(data, offset + 3)
-                val ir = bytes24ToInt(data, offset + 6)
-                val accX = bytes24ToInt(data, offset + 9)
-                val accY = bytes24ToInt(data, offset + 12)
-                val accZ = bytes24ToInt(data, offset + 15)
-                val gyroX = bytes24ToInt(data, offset + 18)
-                val gyroY = bytes24ToInt(data, offset + 21)
-                val gyroZ = bytes24ToInt(data, offset + 24)
-                val temp0 = bytes24ToInt(data, offset + 27)
-                val temp1 = bytes24ToInt(data, offset + 30)
-                val temp2 = bytes24ToInt(data, offset + 33)
-                
-                samples.add(mapOf(
-                    "timestamp" to System.currentTimeMillis(),
-                    "green" to green,
-                    "red" to red,
-                    "ir" to ir,
-                    "accX" to accX,
-                    "accY" to accY,
-                    "accZ" to accZ,
-                    "gyroX" to gyroX,
-                    "gyroY" to gyroY,
-                    "gyroZ" to gyroZ,
-                    "temp0" to temp0,
-                    "temp1" to temp1,
-                    "temp2" to temp2
-                ))
-            } catch (e: Exception) {
-                android.util.Log.e("OpenRing", "解析样本 $i 失败: ${e.message}")
-            }
-        }
-        
-        return samples
-    }
-    
-    // 将 3 字节转换为 24 位有符号整数
-    private fun bytes24ToInt(data: ByteArray, offset: Int): Int {
-        if (offset + 2 >= data.size) return 0
-        
-        val byte0 = data[offset].toInt() and 0xFF
-        val byte1 = data[offset + 1].toInt() and 0xFF
-        val byte2 = data[offset + 2].toInt() and 0xFF
-        
-        // 组合成 24 位整数（大端序）
-        var value = (byte2 shl 16) or (byte1 shl 8) or byte0
-        
-        // 处理符号位（24 位有符号数）
-        if (value and 0x800000 != 0) {
-            value = value or -0x1000000 // 符号扩展
-        }
-        
-        return value
     }
     
     private fun sendEvent(event: Map<String, Any>) {
@@ -493,63 +400,8 @@ class MainActivity: FlutterActivity(), IResponseListener {
     
     override fun appRefresh(systemControlBean: com.lm.sdk.mode.SystemControlBean?) {}
     
-    // 启动在线测量
-    private fun startLiveMeasurement(duration: Int, result: MethodChannel.Result) {
-        try {
-            android.util.Log.d("OpenRing", "开始在线测量，时长: $duration 秒")
-            
-            // 设置测量状态
-            isMeasuring = true
-            sampleBuffer.clear()
-            
-            // 发送启动测量命令到戒指
-            // 0xC4 是启动实时数据流的命令（参考原项目）
-            val startCmd = byteArrayOf(0xC4.toByte())
-            BLEService.sendCmd(startCmd)
-            
-            android.util.Log.d("OpenRing", "已发送启动测量命令")
-            
-            // 自动停止测量（可选）
-            if (duration > 0) {
-                handler.postDelayed({
-                    stopMeasurement(null)
-                }, (duration * 1000).toLong())
-            }
-            
-            result.success(null)
-        } catch (e: Exception) {
-            android.util.Log.e("OpenRing", "启动测量失败: ${e.message}", e)
-            result.error("START_MEASUREMENT_ERROR", e.message, null)
-        }
-    }
-    
-    // 停止测量
-    private fun stopMeasurement(result: MethodChannel.Result?) {
-        try {
-            android.util.Log.d("OpenRing", "停止在线测量")
-            
-            // 发送停止测量命令到戒指
-            // 0xC5 是停止实时数据流的命令（参考原项目）
-            val stopCmd = byteArrayOf(0xC5.toByte())
-            BLEService.sendCmd(stopCmd)
-            
-            // 清除测量状态
-            isMeasuring = false
-            sampleBuffer.clear()
-            
-            android.util.Log.d("OpenRing", "已发送停止测量命令")
-            
-            result?.success(null)
-        } catch (e: Exception) {
-            android.util.Log.e("OpenRing", "停止测量失败: ${e.message}", e)
-            result?.error("STOP_MEASUREMENT_ERROR", e.message, null)
-        }
-    }
-    
     override fun onDestroy() {
         super.onDestroy()
-        isMeasuring = false
-        sampleBuffer.clear()
         stopScan()
         LocalBroadcastManager.getInstance(this).unregisterReceiver(connectionStateReceiver)
         methodChannel?.setMethodCallHandler(null)
