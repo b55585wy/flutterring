@@ -23,7 +23,7 @@ class RingPlatform {
             address: device['address'] as String,
             rssi: device['rssi'] as int?,
           );
-//      scan completed event
+//      
         case 'scanCompleted':
           return const BleEvent.scanCompleted();
 
