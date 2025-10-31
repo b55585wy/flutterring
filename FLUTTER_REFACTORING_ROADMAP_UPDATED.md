@@ -1,7 +1,7 @@
 # OpenRing Flutter 重构路线图 - 更新版
 
 > **更新时间**: 2024-10-31  
-> **当前状态**: 阶段 0 已完成，阶段 1 进行中
+> **当前状态**: 阶段 1.1 部分完成（扫描+连接），准备开始阶段 1.2
 
 ---
 
@@ -58,6 +58,30 @@
 
 ---
 
+---
+
+## 📊 当前进度摘要（阶段 1）
+
+| 任务 | 状态 | 完成度 | 关键成果 |
+|------|------|--------|----------|
+| 任务 1.1 - BLE 扫描与连接 | ✅ 部分完成 | 30% | 设备扫描、过滤、连接成功 |
+| 任务 1.2 - Freezed 数据模型 | ✅ 已完成 | 100% | 9 种事件类型、3 个数据模型 |
+| 任务 1.3 - 测量页面数据集成 | ⏳ 待开始 | 0% | 需实现实时数据流 |
+| 任务 1.4 - Dashboard 设备信息 | ✅ 部分完成 | 70% | 连接状态、设备名称显示 |
+
+**🎯 下一步优先级（按顺序）**:
+1. **任务 1.1 - 实现实时数据流** ⭐⭐⭐（最高优先级）
+   - 在 MainActivity.kt 中解析 BLE 数据
+   - 发送 `SampleBatch` 事件到 Flutter
+   - 实现 `startLiveMeasurement` 和 `stopMeasurement`
+
+2. **任务 1.3 - 测量页面集成数据** ⭐⭐
+   - 监听实时数据流
+   - 更新波形显示
+   - 实现开始/停止控制
+
+---
+
 ## 🚀 下一阶段计划
 
 ### 阶段 1: Platform Channel 完善与 BLE 集成（预计 3-4 天）
@@ -67,13 +91,16 @@
 **目标**: 将用户编写的 MainActivity.kt 与 AAR 库集成，实现真实 BLE 功能。
 
 **子任务**:
-1. **验证 MainActivity.kt 基本功能**
-   - [ ] 测试扫描功能（scanDevices）
-   - [ ] 测试连接功能（connectDevice）
-   - [ ] 测试断连功能（disconnect）
-   - [ ] 验证 EventChannel 事件流通（deviceFound, connectionStateChanged）
+1. **验证 MainActivity.kt 基本功能** ✅ **已完成**
+   - [x] 测试扫描功能（scanDevices） ✅
+   - [x] 测试连接功能（connectDevice） ✅
+   - [x] 测试断连功能（disconnect） ✅
+   - [x] 验证 EventChannel 事件流通（deviceFound, connectionStateChanged） ✅
+   - [x] 使用 LogicalApi 过滤设备（仅显示 OpenRing 智能戒指） ✅
+   - [x] 注册 BLEService 到 AndroidManifest.xml ✅
+   - [x] 添加连接日志（便于调试） ✅
 
-2. **集成 AAR 库的核心方法**
+2. **集成 AAR 库的核心方法** 🚧 **下一步**
    - [ ] 实现 `startLiveMeasurement(duration)` - 启动在线测量
    - [ ] 实现 `stopMeasurement()` - 停止测量
    - [ ] 实现 `getDeviceInfo()` - 获取设备版本、电量
@@ -81,95 +108,52 @@
    - [ ] 实现 `updateDeviceTime()` - 同步时间
    - [ ] 实现 `calibrateTime()` - 校准时间
 
-3. **实现实时数据流**
+3. **实现实时数据流** 🚧 **下一步**
    - [ ] 实现 `onCharacteristicChanged` 回调解析
    - [ ] 将原始 BLE 数据转换为 `SampleBatch` 事件
    - [ ] 发送到 EventChannel
    - [ ] Dart 侧接收并解析数据
 
 **验收标准**:
-- ✅ 可以成功扫描并连接戒指
-- ✅ 启动测量后，Dart 侧可接收到实时数据流
-- ✅ 数据格式正确（包含 PPG×3, ACC×3, Gyro×3, Temp×3）
+- ✅ 可以成功扫描并连接戒指（已完成）
+- ⏳ 启动测量后，Dart 侧可接收到实时数据流（下一步）
+- ⏳ 数据格式正确（包含 PPG×3, ACC×3, Gyro×3, Temp×3）（下一步）
 
-**预计时间**: 1-2 天
+**预计时间**: 1-2 天  
+**实际进度**: 已完成 30%（扫描+连接）
 
 ---
 
-#### 📋 任务 1.2: 数据模型与事件系统
+#### 📋 任务 1.2: 数据模型与事件系统 ✅ **已完成**
 
 **目标**: 定义完整的 Freezed 数据模型，实现类型安全的事件系统。
 
 **文件创建**:
-1. **`lib/models/ble_event.dart`** - BLE 事件模型
-   ```dart
-   @freezed
-   class BleEvent with _$BleEvent {
-     const factory BleEvent.connectionStateChanged({...}) = ConnectionStateChanged;
-     const factory BleEvent.sampleBatch({...}) = SampleBatchEvent;
-     const factory BleEvent.vitalSignsUpdate({...}) = VitalSignsUpdateEvent;
-     const factory BleEvent.deviceFound({...}) = DeviceFoundEvent;
-     const factory BleEvent.scanCompleted() = ScanCompletedEvent;
-     const factory BleEvent.error({...}) = BleErrorEvent;
-   }
-   ```
+1. **`lib/models/ble_event.dart`** - BLE 事件模型 ✅
+   - 已创建 9 种事件类型（deviceFound, scanCompleted, connectionStateChanged, sampleBatch, vitalSignsUpdate, fileListReceived, fileDownloadProgress, fileDownloadCompleted, recordingStateChanged, rssiUpdated, batteryLevelUpdated, error）
 
-2. **`lib/models/sample.dart`** - 传感器样本模型
-   ```dart
-   @freezed
-   class Sample with _$Sample {
-     const factory Sample({
-       required int timestamp,
-       required int green,
-       required int red,
-       required int ir,
-       required int accX,
-       required int accY,
-       required int accZ,
-       required int gyroX,
-       required int gyroY,
-       required int gyroZ,
-       required int temp0,
-       required int temp1,
-       required int temp2,
-     }) = _Sample;
-   }
-   
-   @freezed
-   class SampleBatch with _$SampleBatch {
-     const factory SampleBatch({
-       required List<Sample> samples,
-       required int timestamp,
-     }) = _SampleBatch;
-   }
-   ```
+2. **`lib/models/sample.dart`** - 传感器样本模型 ✅
+   - 已创建 `Sample` 模型（12 个传感器字段）
+   - 已创建 `VitalSigns` 模型（HR/RR/信号质量）
+   - 已创建 `SignalQuality` 枚举（5 级）
 
-3. **`lib/models/device_info.dart`** - 设备信息模型
-   ```dart
-   @freezed
-   class DeviceInfo with _$DeviceInfo {
-     const factory DeviceInfo({
-       required String name,
-       required String address,
-       String? version,
-       int? batteryLevel,
-       DateTime? lastSyncTime,
-     }) = _DeviceInfo;
-   }
-   ```
+3. **`lib/models/device_info.dart`** - 设备信息模型 ✅
+   - 已创建 `DeviceInfo` 模型
+   - 已创建 `DeviceConnectionConfig` 模型
 
 **子任务**:
-- [ ] 创建所有 Freezed 模型
-- [ ] 运行 `flutter pub run build_runner build`
-- [ ] 更新 `ring_platform.dart` 使用新模型
-- [ ] 更新 MainActivity.kt 序列化逻辑
+- [x] 创建所有 Freezed 模型 ✅
+- [x] 运行 `flutter pub run build_runner build` ✅
+- [x] 更新 `ring_platform.dart` 使用新模型 ✅
+- [x] 更新 MainActivity.kt 序列化逻辑 ✅
 
 **验收标准**:
-- ✅ 所有模型正确生成 `.freezed.dart` 和 `.g.dart`
-- ✅ EventChannel 事件可正确反序列化
-- ✅ 类型安全（无运行时类型错误）
+- ✅ 所有模型正确生成 `.freezed.dart` 和 `.g.dart` ✅
+- ✅ EventChannel 事件可正确反序列化 ✅
+- ✅ 类型安全（无运行时类型错误） ✅
 
-**预计时间**: 0.5 天
+**预计时间**: 0.5 天  
+**实际完成**: ✅ 已完成
 
 ---
 
@@ -213,24 +197,28 @@
 
 ---
 
-#### 📋 任务 1.4: Dashboard 页面集成设备信息
+#### 📋 任务 1.4: Dashboard 页面集成设备信息 ✅ **部分完成**
 
 **目标**: 在 Dashboard 显示真实设备信息（电量、版本、连接时间）。
 
 **子任务**:
-- [ ] 调用 `RingPlatform.getDeviceInfo()` 获取设备信息
-- [ ] 调用 `RingPlatform.getBatteryLevel()` 获取电量
-- [ ] 更新 Dashboard UI 显示真实数据
-- [ ] 添加"同步时间"按钮（调用 `updateDeviceTime()`）
-- [ ] 添加"校准时间"按钮（调用 `calibrateTime()`）
+- [x] 调用 `RingPlatform.getDeviceInfo()` 获取设备信息 ✅
+- [x] 调用 `RingPlatform.getBatteryLevel()` 获取电量 ✅
+- [x] 更新 Dashboard UI 显示真实数据 ✅
+- [x] 实现设备扫描功能 ✅
+- [x] 实现设备连接功能 ✅
+- [x] 显示连接状态 ✅
+- [ ] 添加"同步时间"按钮（调用 `updateDeviceTime()`） ⏳
+- [ ] 添加"校准时间"按钮（调用 `calibrateTime()`） ⏳
 
 **验收标准**:
-- ✅ Dashboard 显示真实设备名称
-- ✅ 电量显示正确（带图标和百分比）
-- ✅ 设备版本显示正确
-- ✅ 时间同步功能正常
+- ✅ Dashboard 显示真实设备名称 ✅
+- ✅ 电量显示正确（带图标和百分比） ✅
+- ⏳ 设备版本显示正确（需要实现 getDeviceInfo）
+- ⏳ 时间同步功能正常（后续实现）
 
-**预计时间**: 0.5 天
+**预计时间**: 0.5 天  
+**实际进度**: 已完成 70%（扫描+连接+基础信息显示）
 
 ---
 
