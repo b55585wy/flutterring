@@ -18,17 +18,21 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> {
   int _selectedIndex = 0;
 
-  final List<Widget> _pages = [
-    const DashboardPage(),
-    const MeasurementPage(),
-    const HistoryPage(),
-    const SettingsPage(),
+  // ✅ 使用 IndexedStack 保持所有页面的状态
+  final List<Widget> _pages = const [
+    DashboardPage(),
+    MeasurementPage(),
+    HistoryPage(),
+    SettingsPage(),
   ];
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: _pages[_selectedIndex],
+      body: IndexedStack(
+        index: _selectedIndex,
+        children: _pages,
+      ),
       bottomNavigationBar: Container(
         decoration: BoxDecoration(
           color: Colors.white,
