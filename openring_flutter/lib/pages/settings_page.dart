@@ -100,10 +100,10 @@ class _SettingsPageState extends State<SettingsPage> {
                 ),
                 _buildSettingItem(
                   Icons.devices,
-                  '设备信息',
+                  '设备',
                   _deviceInfo != null
                       ? '${_deviceInfo?.name ?? 'OpenRing'}\n${_deviceInfo?.address ?? '未知地址'}'
-                      : '暂无设备',
+                      : '暂无',
                   const Color(0xFF6366F1),
                   _loadConnectedDevice,
                 ),
