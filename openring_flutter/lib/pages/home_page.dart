@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -117,12 +118,21 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
   int? _currentHeartRate;
   int? _currentRespiratoryRate;
   StateSetter? _deviceSheetSetState;
+  
+  // ✅ 保存 subscription 防止被垃圾回收
+  StreamSubscription<ble.BleEvent>? _bleSubscription;
 
   @override
   void initState() {
     super.initState();
     _listenToBleEvents();
     _checkConnectionStatus();
+  }
+
+  @override
+  void dispose() {
+    _bleSubscription?.cancel();
+    super.dispose();
   }
 
   Future<void> _checkConnectionStatus() async {
@@ -136,7 +146,8 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
           _isConnected = true;
           _deviceInfo = device;
         });
-        print('🔵 Flutter Home: ✅ 检测到已连接设备 - ${device.name} (${device.address})');
+        print(
+            '🔵 Flutter Home: ✅ 检测到已连接设备 - ${device.name} (${device.address})');
       } else {
         print('🔵 Flutter Home: ❌ 没有已连接的设备');
       }
@@ -146,7 +157,9 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
   }
 
   void _listenToBleEvents() {
-    RingPlatform.eventStream.listen((event) {
+    print('🔵 Flutter Home: 开始监听 BLE 事件...');
+    _bleSubscription = RingPlatform.eventStream.listen((event) {
+      print('🔵 Flutter Home: 收到事件');
       event.when(
         deviceFound: (name, address, rssi) {
           print(
