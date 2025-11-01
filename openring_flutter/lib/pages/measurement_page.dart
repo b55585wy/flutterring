@@ -67,6 +67,10 @@ class _MeasurementPageState extends State<MeasurementPage>
       event.when(
         sampleBatch: (samples, timestamp) {
           if (!mounted) return;
+          print('🔵 Flutter Measurement: 收到样本批次 - ${samples.length} 个样本, timestamp=$timestamp');
+          if (samples.isNotEmpty) {
+            print('🔵 Flutter Measurement: 第一个样本 - green=${samples.first.green}, red=${samples.first.red}, ir=${samples.first.ir}');
+          }
           setState(() {
             _sampleCount += samples.length;
             // 更新 PPG 数据（用于波形显示）
@@ -77,6 +81,7 @@ class _MeasurementPageState extends State<MeasurementPage>
               }
             }
           });
+          print('🔵 Flutter Measurement: 当前总样本数=$_sampleCount, 波形数据点=${_ppgGreenData.length}');
         },
         vitalSignsUpdate: (hr, rr, quality) {
           if (!mounted) return;
@@ -444,6 +449,7 @@ class _MeasurementPageState extends State<MeasurementPage>
                             if (_isRecording) {
                               // 停止测量
                               try {
+                                print('🔵 Flutter Measurement: 停止测量');
                                 await RingPlatform.stopMeasurement();
                                 setState(() {
                                   _isRecording = false;
@@ -472,12 +478,14 @@ class _MeasurementPageState extends State<MeasurementPage>
 
                               // 开始测量
                               try {
+                                print('🔵 Flutter Measurement: 开始测量，时长=$duration秒');
                                 await RingPlatform.startLiveMeasurement(
                                     duration: duration);
                                 setState(() {
                                   _isRecording = true;
                                   _sampleCount = 0;
                                 });
+                                print('🔵 Flutter Measurement: 测量状态已更新，_isRecording=$_isRecording');
                                 if (mounted) {
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     SnackBar(
