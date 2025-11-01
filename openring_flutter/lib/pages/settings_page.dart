@@ -92,10 +92,10 @@ class _SettingsPageState extends State<SettingsPage> {
                 _buildSettingItem(
                   Icons.bluetooth_connected,
                   '连接状态',
+                  _isConnected ? '已连接' : '未连接',
                   _isConnected
-                      ? '已连接'
-                      : '未连接',
-                  _isConnected ? const Color(0xFF10B981) : const Color(0xFF94A3B8),
+                      ? const Color(0xFF10B981)
+                      : const Color(0xFF94A3B8),
                   _loadConnectedDevice,
                 ),
                 _buildSettingItem(
@@ -280,11 +280,17 @@ class _SettingsPageState extends State<SettingsPage> {
         mainAxisSize: MainAxisSize.min,
         children: [
           if (trailing.isNotEmpty)
-            Text(
-              trailing,
-              style: const TextStyle(
-                fontSize: 14,
-                color: Color(0xFF64748B),
+            Flexible(
+              child: Text(
+                trailing,
+                textAlign: TextAlign.right,
+                style: const TextStyle(
+                  fontSize: 13,
+                  color: Color(0xFF64748B),
+                  height: 1.3,
+                ),
+                maxLines: 3,
+                overflow: TextOverflow.ellipsis,
               ),
             ),
           const SizedBox(width: 8),
