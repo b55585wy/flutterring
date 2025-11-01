@@ -112,6 +112,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
   int? _batteryLevel;
   int? _currentHeartRate;
   int? _currentRespiratoryRate;
+  StateSetter? _deviceSheetSetState;
 
   @override
   void initState() {
@@ -135,11 +136,13 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
               });
             }
           });
+          _deviceSheetSetState?.call(() {});
         },
         scanCompleted: () {
           setState(() {
             _isScanning = false;
           });
+          _deviceSheetSetState?.call(() {});
         },
         connectionStateChanged: (state, deviceName, address) {
           setState(() {
@@ -191,6 +194,15 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
   }
 
   Future<void> _startScan() async {
+    if (_isConnected) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('设备已连接，如需重新扫描请先断开连接')),
+        );
+      }
+      return;
+    }
+
     // 1. 先请求权限
     final bluetoothScanStatus = await Permission.bluetoothScan.request();
     final bluetoothConnectStatus = await Permission.bluetoothConnect.request();
@@ -212,6 +224,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
       _isScanning = true;
       _foundDevices.clear();
     });
+    _deviceSheetSetState?.call(() {});
 
     try {
       await RingPlatform.scanDevices();
@@ -266,51 +279,98 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
   void _showDeviceList() {
     showModalBottomSheet(
       context: context,
-      builder: (context) => Container(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text(
-                  '可用设备',
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                if (_isScanning)
-                  const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            Expanded(
-              child: _foundDevices.isEmpty
-                  ? const Center(child: Text('未找到设备'))
-                  : ListView.builder(
-                      itemCount: _foundDevices.length,
-                      itemBuilder: (context, index) {
-                        final device = _foundDevices[index];
-                        return ListTile(
-                          leading: const Icon(Icons.bluetooth),
-                          title: Text(device['name']!),
-                          subtitle: Text(device['address']!),
-                          trailing: const Icon(Icons.chevron_right),
-                          onTap: () => _connectDevice(device['address']!),
-                        );
-                      },
+      isScrollControlled: true,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            _deviceSheetSetState = setModalState;
+            return AnimatedPadding(
+              duration: const Duration(milliseconds: 150),
+              padding: MediaQuery.of(context).viewInsets,
+              child: SizedBox(
+                height: MediaQuery.of(context).size.height * 0.6,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 20, vertical: 12),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text(
+                            '可用设备',
+                            style: TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          if (_isScanning)
+                            const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
+                        ],
+                      ),
                     ),
-            ),
-          ],
-        ),
-      ),
-    );
+                    const Divider(height: 1),
+                    Expanded(
+                      child: _foundDevices.isEmpty
+                          ? Center(
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    Icons.bluetooth_searching,
+                                    size: 48,
+                                    color:
+                                        Theme.of(context).colorScheme.primary,
+                                  ),
+                                  const SizedBox(height: 12),
+                                  Text(
+                                    _isScanning
+                                        ? '正在扫描附近的戒指...'
+                                        : '未找到设备，请重新扫描',
+                                    style: const TextStyle(fontSize: 14),
+                                  ),
+                                ],
+                              ),
+                            )
+                          : ListView.builder(
+                              itemCount: _foundDevices.length,
+                              itemBuilder: (context, index) {
+                                final device = _foundDevices[index];
+                                final address = device['address'] ?? '';
+                                final hasAddress = address.isNotEmpty;
+                                return ListTile(
+                                  leading: const Icon(Icons.bluetooth),
+                                  title: Text(device['name'] ?? '未命名设备'),
+                                  subtitle: Text(
+                                    hasAddress ? address : '未知地址',
+                                  ),
+                                  trailing: hasAddress
+                                      ? const Icon(Icons.chevron_right)
+                                      : const Icon(Icons.block,
+                                          color: Colors.redAccent),
+                                  enabled: hasAddress,
+                                  onTap: hasAddress
+                                      ? () => _connectDevice(address)
+                                      : null,
+                                );
+                              },
+                            ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    ).whenComplete(() {
+      _deviceSheetSetState = null;
+    });
   }
 
   @override

@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'dart:math' as math;
 import 'dart:async';
 import '../services/ring_platform.dart';
-import '../models/ble_event.dart';
+import '../models/ble_event.dart'
+    hide ConnectionState; // ✅ 隐藏冲突的 ConnectionState
+import '../models/ble_event.dart' as ble show ConnectionState; // ✅ 使用别名
 import '../models/sample.dart';
 
 class MeasurementPage extends StatefulWidget {
@@ -19,11 +21,14 @@ class _MeasurementPageState extends State<MeasurementPage>
   int _respiratoryRate = 0;
   String _signalQuality = '无信号';
   late AnimationController _pulseController;
-  
+
   // 数据流相关
   StreamSubscription<BleEvent>? _bleEventSubscription;
   final List<int> _ppgGreenData = [];
   int _sampleCount = 0;
+
+  // ✅ 添加连接状态监听
+  bool _isConnected = false;
 
   @override
   void initState() {
@@ -32,9 +37,10 @@ class _MeasurementPageState extends State<MeasurementPage>
       vsync: this,
       duration: const Duration(milliseconds: 1000),
     )..repeat(reverse: true);
-    
+
     // 监听 BLE 事件
     _listenToBleEvents();
+    _loadInitialConnectionState();
   }
 
   @override
@@ -43,7 +49,19 @@ class _MeasurementPageState extends State<MeasurementPage>
     _bleEventSubscription?.cancel();
     super.dispose();
   }
-  
+
+  Future<void> _loadInitialConnectionState() async {
+    try {
+      final device = await RingPlatform.getConnectedDevice();
+      if (!mounted) return;
+      setState(() {
+        _isConnected = device != null;
+      });
+    } catch (_) {
+      // ignore
+    }
+  }
+
   void _listenToBleEvents() {
     _bleEventSubscription = RingPlatform.eventStream.listen((event) {
       event.when(
@@ -70,7 +88,42 @@ class _MeasurementPageState extends State<MeasurementPage>
         },
         deviceFound: (_, __, ___) {},
         scanCompleted: () {},
-        connectionStateChanged: (_, __, ___) {},
+        // ✅ 监听连接状态变化
+        connectionStateChanged: (state, name, address) {
+          if (!mounted) return;
+          setState(() {
+            _isConnected = (state == ble.ConnectionState.connected);
+
+            // 如果断连，停止测量
+            if (state == ble.ConnectionState.disconnected && _isRecording) {
+              _isRecording = false;
+              _heartRate = 0;
+              _respiratoryRate = 0;
+              _signalQuality = '无信号';
+              _ppgGreenData.clear();
+              _sampleCount = 0;
+            }
+          });
+
+          // 显示连接状态提示
+          if (state == ble.ConnectionState.connected) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('已连接: ${name ?? address}'),
+                backgroundColor: Colors.green,
+                duration: const Duration(seconds: 2),
+              ),
+            );
+          } else if (state == ble.ConnectionState.disconnected) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: const Text('设备已断开连接'),
+                backgroundColor: Colors.orange,
+                duration: const Duration(seconds: 3),
+              ),
+            );
+          }
+        },
         fileListReceived: (_) {},
         fileDownloadProgress: (_, __, ___) {},
         fileDownloadCompleted: (_, __) {},
@@ -80,14 +133,17 @@ class _MeasurementPageState extends State<MeasurementPage>
         error: (message, code) {
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('错误: $message')),
+              SnackBar(
+                content: Text('错误: $message'),
+                backgroundColor: Colors.red,
+              ),
             );
           }
         },
       );
     });
   }
-  
+
   String _qualityToString(SignalQuality quality) {
     switch (quality) {
       case SignalQuality.excellent:
@@ -101,6 +157,85 @@ class _MeasurementPageState extends State<MeasurementPage>
       case SignalQuality.noSignal:
         return '无信号';
     }
+  }
+
+  // ✅ 显示时长选择对话框
+  Future<int?> _showDurationDialog() async {
+    return showDialog<int>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('选择测量时长'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _buildDurationOption('30 秒', 30),
+            _buildDurationOption('1 分钟 (60秒)', 60),
+            _buildDurationOption('2 分钟 (120秒)', 120),
+            _buildDurationOption('5 分钟 (300秒)', 300),
+            const Divider(),
+            _buildDurationOption('自定义...', -1),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // 时长选项
+  Widget _buildDurationOption(String label, int seconds) {
+    return ListTile(
+      title: Text(label),
+      onTap: () async {
+        if (seconds == -1) {
+          // 自定义时长
+          Navigator.pop(context);
+          final customDuration = await _showCustomDurationDialog();
+          if (customDuration != null && mounted) {
+            Navigator.pop(context, customDuration);
+          }
+        } else {
+          Navigator.pop(context, seconds);
+        }
+      },
+    );
+  }
+
+  // 自定义时长输入对话框
+  Future<int?> _showCustomDurationDialog() async {
+    final controller = TextEditingController();
+    return showDialog<int>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('自定义测量时长'),
+        content: TextField(
+          controller: controller,
+          keyboardType: TextInputType.number,
+          decoration: const InputDecoration(
+            labelText: '时长（秒）',
+            hintText: '请输入1-3600秒',
+            suffixText: '秒',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () {
+              final value = int.tryParse(controller.text);
+              if (value != null && value >= 1 && value <= 3600) {
+                Navigator.pop(context, value);
+              } else {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('请输入1-3600之间的数字')),
+                );
+              }
+            },
+            child: const Text('确定'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -287,66 +422,78 @@ class _MeasurementPageState extends State<MeasurementPage>
                   ),
                 ),
               ),
-            
+
             if (_isRecording && _sampleCount > 0) const SizedBox(height: 16),
-            
+
             // 控制按钮
             Row(
               children: [
                 Expanded(
                   child: _buildControlButton(
-                    _isRecording ? '停止测量' : '开始测量',
+                    _isRecording ? '停止测量' : (_isConnected ? '开始测量' : '请先连接设备'),
                     _isRecording ? Icons.stop_circle : Icons.play_circle_filled,
                     _isRecording
                         ? const Color(0xFFEF4444)
                         : const Color(0xFF10B981),
-                    () async {
-                      if (_isRecording) {
-                        // 停止测量
-                        try {
-                          await RingPlatform.stopMeasurement();
-                          setState(() {
-                            _isRecording = false;
-                            _heartRate = 0;
-                            _respiratoryRate = 0;
-                            _signalQuality = '无信号';
-                            _ppgGreenData.clear();
-                            _sampleCount = 0;
-                          });
-                          if (mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('测量已停止')),
-                            );
-                          }
-                        } catch (e) {
-                          if (mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text('停止测量失败: $e')),
-                            );
-                          }
-                        }
-                      } else {
-                        // 开始测量
-                        try {
-                          await RingPlatform.startLiveMeasurement(duration: 60);
-                          setState(() {
-                            _isRecording = true;
-                            _sampleCount = 0;
-                          });
-                          if (mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('测量已开始，时长60秒')),
-                            );
-                          }
-                        } catch (e) {
-                          if (mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text('启动测量失败: $e')),
-                            );
-                          }
-                        }
-                      }
-                    },
+                    // ✅ 检查连接状态后才允许操作
+                    (!_isRecording && !_isConnected)
+                        ? null
+                        : () async {
+                            if (_isRecording) {
+                              // 停止测量
+                              try {
+                                await RingPlatform.stopMeasurement();
+                                setState(() {
+                                  _isRecording = false;
+                                  _heartRate = 0;
+                                  _respiratoryRate = 0;
+                                  _signalQuality = '无信号';
+                                  _ppgGreenData.clear();
+                                  _sampleCount = 0;
+                                });
+                                if (mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(content: Text('测量已停止')),
+                                  );
+                                }
+                              } catch (e) {
+                                if (mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(content: Text('停止测量失败: $e')),
+                                  );
+                                }
+                              }
+                            } else {
+                              // ✅ 显示时长选择对话框
+                              final duration = await _showDurationDialog();
+                              if (duration == null) return;
+
+                              // 开始测量
+                              try {
+                                await RingPlatform.startLiveMeasurement(
+                                    duration: duration);
+                                setState(() {
+                                  _isRecording = true;
+                                  _sampleCount = 0;
+                                });
+                                if (mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                        content: Text('测量已开始，时长$duration秒')),
+                                  );
+                                }
+                              } catch (e) {
+                                if (mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text('启动测量失败: $e'),
+                                      backgroundColor: Colors.red,
+                                    ),
+                                  );
+                                }
+                              }
+                            }
+                          },
                   ),
                 ),
               ],
@@ -536,12 +683,12 @@ class _MeasurementPageState extends State<MeasurementPage>
     String label,
     IconData icon,
     Color color,
-    VoidCallback onPressed,
+    VoidCallback? onPressed, // ✅ 改为可空，支持禁用状态
   ) {
     return ElevatedButton(
       onPressed: onPressed,
       style: ElevatedButton.styleFrom(
-        backgroundColor: color,
+        backgroundColor: onPressed != null ? color : Colors.grey, // ✅ 禁用时显示灰色
         foregroundColor: Colors.white,
         padding: const EdgeInsets.symmetric(vertical: 16),
         shape: RoundedRectangleBorder(

@@ -1,7 +1,71 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
-class SettingsPage extends StatelessWidget {
+import '../models/ble_event.dart' as ble;
+import '../models/device_info.dart';
+import '../services/ring_platform.dart';
+
+class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
+
+  @override
+  State<SettingsPage> createState() => _SettingsPageState();
+}
+
+class _SettingsPageState extends State<SettingsPage> {
+  bool _isConnected = false;
+  DeviceInfo? _deviceInfo;
+  StreamSubscription<ble.BleEvent>? _bleSubscription;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadConnectedDevice();
+    _listenToBleEvents();
+  }
+
+  @override
+  void dispose() {
+    _bleSubscription?.cancel();
+    super.dispose();
+  }
+
+  void _listenToBleEvents() {
+    _bleSubscription = RingPlatform.eventStream.listen((event) {
+      event.maybeWhen(
+        connectionStateChanged: (state, name, address) {
+          final connected = state == ble.ConnectionState.connected;
+          if (connected) {
+            _loadConnectedDevice();
+          } else {
+            setState(() {
+              _isConnected = false;
+              _deviceInfo = null;
+            });
+          }
+        },
+        orElse: () {},
+      );
+    });
+  }
+
+  Future<void> _loadConnectedDevice() async {
+    try {
+      final device = await RingPlatform.getConnectedDevice();
+      if (!mounted) return;
+      setState(() {
+        _deviceInfo = device;
+        _isConnected = device != null;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _isConnected = false;
+        _deviceInfo = null;
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -12,152 +76,144 @@ class SettingsPage extends StatelessWidget {
           style: TextStyle(fontWeight: FontWeight.bold),
         ),
       ),
-      body: ListView(
-        padding: const EdgeInsets.all(20),
-        children: [
-          // 设备管理
-          _buildSection(
-            '设备管理',
-            [
-              _buildSettingItem(
-                Icons.bluetooth_connected,
-                '已连接设备',
-                '未连接',
-                const Color(0xFF6366F1),
-                () {},
-              ),
-              _buildSettingItem(
-                Icons.devices,
-                '设备信息',
-                '查看详情',
-                const Color(0xFF10B981),
-                () {},
-              ),
-              _buildSettingItem(
-                Icons.update,
-                '固件更新',
-                '检查更新',
-                const Color(0xFFF59E0B),
-                () {},
-              ),
-            ],
-          ),
-
-          const SizedBox(height: 24),
-
-          // 数据管理
-          _buildSection(
-            '数据管理',
-            [
-              _buildSettingItem(
-                Icons.cloud_upload,
-                '数据同步',
-                '自动同步',
-                const Color(0xFF3B82F6),
-                () {},
-              ),
-              _buildSettingItem(
-                Icons.file_download,
-                '数据导出',
-                '导出 CSV',
-                const Color(0xFF8B5CF6),
-                () {},
-              ),
-              _buildSettingItem(
-                Icons.delete_sweep,
-                '清除数据',
-                '谨慎操作',
-                const Color(0xFFEF4444),
-                () {},
-              ),
-            ],
-          ),
-
-          const SizedBox(height: 24),
-
-          // 应用设置
-          _buildSection(
-            '应用设置',
-            [
-              _buildSettingItem(
-                Icons.notifications,
-                '通知设置',
-                '已开启',
-                const Color(0xFF10B981),
-                () {},
-              ),
-              _buildSettingItem(
-                Icons.language,
-                '语言设置',
-                '简体中文',
-                const Color(0xFF6366F1),
-                () {},
-              ),
-              _buildSettingItem(
-                Icons.dark_mode,
-                '深色模式',
-                '跟随系统',
-                const Color(0xFF64748B),
-                () {},
-              ),
-            ],
-          ),
-
-          const SizedBox(height: 24),
-
-          // 关于
-          _buildSection(
-            '关于',
-            [
-              _buildSettingItem(
-                Icons.info,
-                '版本信息',
-                'v1.0.0',
-                const Color(0xFF64748B),
-                () {},
-              ),
-              _buildSettingItem(
-                Icons.privacy_tip,
-                '隐私政策',
-                '',
-                const Color(0xFF64748B),
-                () {},
-              ),
-              _buildSettingItem(
-                Icons.description,
-                '用户协议',
-                '',
-                const Color(0xFF64748B),
-                () {},
-              ),
-            ],
-          ),
-
-          const SizedBox(height: 40),
-
-          // 退出登录（示例）
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: OutlinedButton(
-              onPressed: () {},
-              style: OutlinedButton.styleFrom(
-                foregroundColor: const Color(0xFFEF4444),
-                side: const BorderSide(color: Color(0xFFEF4444)),
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
+      body: RefreshIndicator(
+        onRefresh: _loadConnectedDevice,
+        child: ListView(
+          padding: const EdgeInsets.all(20),
+          children: [
+            _buildSection(
+              '设备管理',
+              [
+                _buildSettingItem(
+                  Icons.bluetooth_connected,
+                  '已连接设备',
+                  _isConnected
+                      ? '${_deviceInfo?.name ?? 'OpenRing'} (已连接)'
+                      : '未连接',
+                  const Color(0xFF6366F1),
+                  _loadConnectedDevice,
                 ),
-              ),
-              child: const Text(
-                '退出登录',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
+                _buildSettingItem(
+                  Icons.devices,
+                  '设备信息',
+                  _deviceInfo?.address ?? '查看详情',
+                  const Color(0xFF10B981),
+                  _loadConnectedDevice,
+                ),
+                _buildSettingItem(
+                  Icons.update,
+                  '固件更新',
+                  '检查更新',
+                  const Color(0xFFF59E0B),
+                  () {},
+                ),
+              ],
+            ),
+            const SizedBox(height: 24),
+            _buildSection(
+              '数据管理',
+              [
+                _buildSettingItem(
+                  Icons.cloud_upload,
+                  '数据同步',
+                  '自动同步',
+                  const Color(0xFF3B82F6),
+                  () {},
+                ),
+                _buildSettingItem(
+                  Icons.file_download,
+                  '数据导出',
+                  '导出 CSV',
+                  const Color(0xFF8B5CF6),
+                  () {},
+                ),
+                _buildSettingItem(
+                  Icons.delete_sweep,
+                  '清除数据',
+                  '谨慎操作',
+                  const Color(0xFFEF4444),
+                  () {},
+                ),
+              ],
+            ),
+            const SizedBox(height: 24),
+            _buildSection(
+              '应用设置',
+              [
+                _buildSettingItem(
+                  Icons.notifications,
+                  '通知设置',
+                  '已开启',
+                  const Color(0xFF10B981),
+                  () {},
+                ),
+                _buildSettingItem(
+                  Icons.language,
+                  '语言设置',
+                  '简体中文',
+                  const Color(0xFF6366F1),
+                  () {},
+                ),
+                _buildSettingItem(
+                  Icons.dark_mode,
+                  '深色模式',
+                  '跟随系统',
+                  const Color(0xFF64748B),
+                  () {},
+                ),
+              ],
+            ),
+            const SizedBox(height: 24),
+            _buildSection(
+              '关于',
+              [
+                _buildSettingItem(
+                  Icons.info,
+                  '版本信息',
+                  'v1.0.0',
+                  const Color(0xFF64748B),
+                  () {},
+                ),
+                _buildSettingItem(
+                  Icons.privacy_tip,
+                  '隐私政策',
+                  '',
+                  const Color(0xFF64748B),
+                  () {},
+                ),
+                _buildSettingItem(
+                  Icons.description,
+                  '用户协议',
+                  '',
+                  const Color(0xFF64748B),
+                  () {},
+                ),
+              ],
+            ),
+            const SizedBox(height: 40),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: OutlinedButton(
+                onPressed: () {},
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: const Color(0xFFEF4444),
+                  side: const BorderSide(color: Color(0xFFEF4444)),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                child: const Text(
+                  '退出登录',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

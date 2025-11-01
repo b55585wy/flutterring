@@ -13,6 +13,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.IntentFilter
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
+import java.time.Instant
 import com.tsinghua.openring.utils.BLEService
 import com.lm.sdk.LmAPI
 import com.lm.sdk.inter.IResponseListener
@@ -26,6 +27,13 @@ class MainActivity: FlutterActivity(), IResponseListener {
     private var eventChannel: EventChannel? = null
     private var eventSink: EventChannel.EventSink? = null
     private val handler = Handler(Looper.getMainLooper())
+    
+    // ✅ 添加连接状态标志
+    private var isConnected = false
+    private var currentConnectionState: String = "disconnected"
+    private var currentDeviceName: String? = null
+    private var currentDeviceAddress: String? = null
+    private var lastConnectedIso: String? = null
     
     private val connectionStateReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -88,8 +96,7 @@ class MainActivity: FlutterActivity(), IResponseListener {
                     disconnectDevice(result)
                 }
                 "getConnectedDevice" -> {
-                    // TODO: 获取当前连接的设备信息
-                    result.success(null)
+                    result.success(buildConnectedDeviceInfo())
                 }
                 "startLiveMeasurement" -> {
                     val duration = call.argument<Int>("duration") ?: 60
@@ -117,6 +124,7 @@ class MainActivity: FlutterActivity(), IResponseListener {
         eventChannel?.setStreamHandler(object : EventChannel.StreamHandler {
             override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
                 eventSink = events
+                emitConnectionEvent()
             }
             
             override fun onCancel(arguments: Any?) {
@@ -136,6 +144,8 @@ class MainActivity: FlutterActivity(), IResponseListener {
                 android.util.Log.d("OpenRing", "设备对象创建成功: ${device.name} - ${device.address}")
                 
                 GlobalParameterUtils.getInstance().device = device
+                currentDeviceName = device.name
+                currentDeviceAddress = device.address
                 
                 if (adapter.isEnabled) {
                     android.util.Log.d("OpenRing", "蓝牙已启用，开始启动 BLEService")
@@ -144,6 +154,9 @@ class MainActivity: FlutterActivity(), IResponseListener {
                     bleServiceIntent.putExtra(BLEService.BLUETOOTH_CONNECT_DEVICE, device)
                     bleServiceIntent.putExtra(BLEService.BLUETOOTH_HID_MODE, false)
                     startService(bleServiceIntent)
+
+                    currentConnectionState = "connecting"
+                    emitConnectionEvent()
                     
                     android.util.Log.d("OpenRing", "BLEService 已启动")
                     result.success(null)
@@ -164,10 +177,33 @@ class MainActivity: FlutterActivity(), IResponseListener {
     
     private fun disconnectDevice(result: MethodChannel.Result) {
         try {
+            android.util.Log.d("OpenRing", "开始断开连接...")
+            
+            // ✅ 1. 如果正在测量，先停止
+            if (isMeasuring) {
+                android.util.Log.d("OpenRing", "正在测量中，先停止测量")
+                stopMeasurement(null)
+            }
+            
+            // ✅ 2. 停止 BLE 服务
             val bleServiceIntent = Intent(this, BLEService::class.java)
             stopService(bleServiceIntent)
+            
+            // ✅ 3. 更新连接状态
+            isConnected = false
+            currentConnectionState = "disconnected"
+            currentDeviceName = null
+            currentDeviceAddress = null
+            
+            // ✅ 4. 发送断连事件
+            handler.postDelayed({
+                emitConnectionEvent()
+            }, 100)
+            
+            android.util.Log.d("OpenRing", "✅ 断开连接成功")
             result.success(null)
         } catch (e: Exception) {
+            android.util.Log.e("OpenRing", "断开连接失败", e)
             result.error("DISCONNECT_ERROR", e.message, null)
         }
     }
@@ -177,16 +213,37 @@ class MainActivity: FlutterActivity(), IResponseListener {
     
     private fun scanDevices(result: MethodChannel.Result) {
         try {
+            android.util.Log.d("OpenRing", "========== 开始扫描设备 ==========")
+            
             val adapter = BluetoothAdapter.getDefaultAdapter()
             if (!adapter.isEnabled) {
+                android.util.Log.e("OpenRing", "蓝牙未启用")
                 result.error("BLUETOOTH_DISABLED", "Bluetooth is disabled", null)
                 return
             }
             
+            // ✅ 如果正在扫描，先停止
             if (isScanning) {
-                result.success(null)
+                android.util.Log.w("OpenRing", "已在扫描中，先停止之前的扫描")
+                stopScan()
+                
+                // ✅ 延迟500ms后再开始新扫描，避免冲突
+                handler.postDelayed({
+                    startNewScan(adapter, result)
+                }, 500)
                 return
             }
+            
+            startNewScan(adapter, result)
+        } catch (e: Exception) {
+            android.util.Log.e("OpenRing", "扫描异常", e)
+            result.error("SCAN_ERROR", e.message, null)
+        }
+    }
+    
+    private fun startNewScan(adapter: BluetoothAdapter, result: MethodChannel.Result) {
+        try {
+            android.util.Log.d("OpenRing", "启动新的扫描...")
             
             // 创建扫描回调
             leScanCallback = BluetoothAdapter.LeScanCallback { device, rssi, scanRecord ->
@@ -199,6 +256,7 @@ class MainActivity: FlutterActivity(), IResponseListener {
                     
                     // 只有通过过滤的设备才发送到 Flutter
                     if (bleDeviceInfo != null) {
+                        android.util.Log.d("OpenRing", "发现设备: ${device.name} (${device.address}) RSSI: $rssi")
                         handler.post {
                             sendEvent(mapOf(
                                 "type" to "deviceFound",
@@ -217,16 +275,24 @@ class MainActivity: FlutterActivity(), IResponseListener {
             @Suppress("DEPRECATION")
             isScanning = adapter.startLeScan(leScanCallback)
             
-            // 10秒后自动停止
+            if (isScanning) {
+                android.util.Log.d("OpenRing", "✅ 扫描已启动，15秒后自动停止")
+            } else {
+                android.util.Log.e("OpenRing", "❌ 扫描启动失败")
+            }
+            
+            // ✅ 延长到15秒后自动停止
             handler.postDelayed({
+                android.util.Log.d("OpenRing", "扫描超时，停止扫描")
                 stopScan()
                 handler.post {
                     sendEvent(mapOf("type" to "scanCompleted"))
                 }
-            }, 10000)
+            }, 15000)
             
             result.success(null)
         } catch (e: Exception) {
+            android.util.Log.e("OpenRing", "启动扫描异常", e)
             result.error("SCAN_ERROR", e.message, null)
         }
     }
@@ -241,19 +307,33 @@ class MainActivity: FlutterActivity(), IResponseListener {
     }
     
     private fun handleConnectionStateChange(state: Int) {
-        val stateString = when (state) {
-            BLEService.CONNECT_STATE_SUCCESS -> "connected"
-            BLEService.CONNECT_STATE_DISCONNECTED -> "disconnected"
-            BLEService.CONNECT_STATE_GATT_CONNECTING -> "connecting"
-            else -> "unknown"
+        currentConnectionState = when (state) {
+            BLEService.CONNECT_STATE_SUCCESS -> {
+                isConnected = true
+                android.util.Log.d("OpenRing", "✅ 连接成功，isConnected = true")
+                val device = GlobalParameterUtils.getInstance().device
+                currentDeviceName = device?.name ?: currentDeviceName
+                currentDeviceAddress = device?.address ?: currentDeviceAddress
+                lastConnectedIso = Instant.now().toString()
+                "connected"
+            }
+            BLEService.CONNECT_STATE_DISCONNECTED -> {
+                isConnected = false
+                android.util.Log.d("OpenRing", "❌ 已断连，isConnected = false")
+                "disconnected"
+            }
+            BLEService.CONNECT_STATE_GATT_CONNECTING -> {
+                android.util.Log.d("OpenRing", "⏳ 连接中...")
+                "connecting"
+            }
+            else -> {
+                android.util.Log.d("OpenRing", "❓ 未知连接状态: $state")
+                "unknown"
+            }
         }
         
         handler.post {
-            sendEvent(mapOf(
-                "type" to "connectionStateChanged",
-                "state" to stateString,
-                "statusCode" to state
-            ))
+            emitConnectionEvent(statusCode = state)
         }
     }
     
@@ -395,8 +475,42 @@ class MainActivity: FlutterActivity(), IResponseListener {
         }
     }
     
-    private fun sendEvent(event: Map<String, Any>) {
+    private fun sendEvent(event: Map<String, Any?>) {
         eventSink?.success(event)
+    }
+
+    private fun emitConnectionEvent(statusCode: Int? = null) {
+        val event = mutableMapOf<String, Any?>(
+            "type" to "connectionStateChanged",
+            "state" to currentConnectionState
+        )
+        if (statusCode != null) {
+            event["statusCode"] = statusCode
+        }
+        if (!currentDeviceName.isNullOrEmpty()) {
+            event["deviceName"] = currentDeviceName
+        }
+        if (!currentDeviceAddress.isNullOrEmpty()) {
+            event["address"] = currentDeviceAddress
+        }
+        sendEvent(event)
+    }
+
+    private fun buildConnectedDeviceInfo(): Map<String, Any?>? {
+        if (currentConnectionState != "connected") {
+            return null
+        }
+
+        val device = GlobalParameterUtils.getInstance().device
+        val address = currentDeviceAddress ?: device?.address ?: return null
+        val name = currentDeviceName ?: device?.name ?: "OpenRing"
+
+        return mapOf(
+            "name" to name,
+            "address" to address,
+            "isConnected" to true,
+            "lastConnectedTime" to (lastConnectedIso ?: Instant.now().toString())
+        )
     }
     
     // IResponseListener implementations
@@ -531,30 +645,58 @@ class MainActivity: FlutterActivity(), IResponseListener {
     
     // 启动在线测量
     private fun startLiveMeasurement(duration: Int, result: MethodChannel.Result) {
+        android.util.Log.d("OpenRing", "========== 开始测量 ==========")
+        android.util.Log.d("OpenRing", "时长: $duration 秒")
+        android.util.Log.d("OpenRing", "连接状态: $isConnected")
+        android.util.Log.d("OpenRing", "测量状态: $isMeasuring")
+        
         try {
-            android.util.Log.d("OpenRing", "开始在线测量，时长: $duration 秒")
+            // ✅ 步骤 1: 检查连接状态
+            if (!isConnected) {
+                android.util.Log.e("OpenRing", "❌ 设备未连接，无法开始测量")
+                result.error("NOT_CONNECTED", "设备未连接，请先连接设备", null)
+                return
+            }
             
-            // 设置测量状态
+            // ✅ 步骤 2: 检查是否已在测量中
+            if (isMeasuring) {
+                android.util.Log.w("OpenRing", "⚠️ 已在测量中，忽略重复请求")
+                result.error("ALREADY_MEASURING", "已在测量中", null)
+                return
+            }
+            
+            android.util.Log.d("OpenRing", "✅ 状态检查通过，准备发送命令")
+            
+            // ✅ 步骤 3: 设置测量状态
             isMeasuring = true
             sampleBuffer.clear()
             
-            // 发送启动测量命令到戒指
+            // ✅ 步骤 4: 发送启动测量命令到戒指
             // 0xC4 是启动实时数据流的命令（参考原项目）
             val startCmd = byteArrayOf(0xC4.toByte())
+            android.util.Log.d("OpenRing", "发送命令: ${startCmd.joinToString(" ") { "%02X".format(it) }}")
+            
             BLEService.sendCmd(startCmd)
             
-            android.util.Log.d("OpenRing", "已发送启动测量命令")
+            android.util.Log.d("OpenRing", "✅ 命令已发送")
             
-            // 自动停止测量（可选）
+            // ✅ 步骤 5: 设置自动停止
             if (duration > 0) {
+                android.util.Log.d("OpenRing", "设置 $duration 秒后自动停止")
                 handler.postDelayed({
                     stopMeasurement(null)
                 }, (duration * 1000).toLong())
             }
             
             result.success(null)
+            android.util.Log.d("OpenRing", "========== 测量启动成功 ==========")
         } catch (e: Exception) {
-            android.util.Log.e("OpenRing", "启动测量失败: ${e.message}", e)
+            android.util.Log.e("OpenRing", "❌ 启动测量异常", e)
+            android.util.Log.e("OpenRing", "异常类型: ${e.javaClass.name}")
+            android.util.Log.e("OpenRing", "异常消息: ${e.message}")
+            e.printStackTrace()
+            
+            isMeasuring = false
             result.error("START_MEASUREMENT_ERROR", e.message, null)
         }
     }
