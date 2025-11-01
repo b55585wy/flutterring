@@ -118,7 +118,23 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
   void initState() {
     super.initState();
     _listenToBleEvents();
-    _loadDeviceInfo();
+    _checkConnectionStatus();
+  }
+
+  Future<void> _checkConnectionStatus() async {
+    try {
+      // 主动检查是否有已连接的设备
+      final device = await RingPlatform.getConnectedDevice();
+      if (mounted && device != null) {
+        setState(() {
+          _isConnected = true;
+          _deviceInfo = device;
+        });
+        print('🔵 Flutter Home: 检测到已连接设备 - ${device.name}');
+      }
+    } catch (e) {
+      print('🔵 Flutter Home: 检查连接状态失败 - $e');
+    }
   }
 
   void _listenToBleEvents() {
@@ -145,10 +161,15 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
           _deviceSheetSetState?.call(() {});
         },
         connectionStateChanged: (state, deviceName, address) {
+          print(
+              '🔵 Flutter Home: 收到连接状态变化 - state=$state, name=$deviceName, address=$address');
           setState(() {
-            _isConnected = state == ble.ConnectionState.connected;
+            // 连接中或已连接时都视为"连接状态"，避免UI闪烁
+            _isConnected = state == ble.ConnectionState.connected ||
+                state == ble.ConnectionState.connecting;
           });
-          if (_isConnected) {
+          print('🔵 Flutter Home: _isConnected = $_isConnected');
+          if (state == ble.ConnectionState.connected) {
             _loadDeviceInfo();
           }
         },

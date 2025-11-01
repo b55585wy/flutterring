@@ -106,12 +106,17 @@ class MainActivity: FlutterActivity(), IResponseListener {
                     stopMeasurement(result)
                 }
                 "getDeviceInfo" -> {
-                    // TODO: 获取设备信息
-                    result.success(mapOf(
-                        "name" to "OpenRing",
-                        "version" to "1.0.0",
-                        "battery" to 80
-                    ))
+                    // 返回已连接设备的信息
+                    result.success(buildConnectedDeviceInfo())
+                }
+                "getBatteryLevel" -> {
+                    // 返回电池电量
+                    val deviceInfo = buildConnectedDeviceInfo()
+                    if (deviceInfo != null && deviceInfo.containsKey("battery")) {
+                        result.success(deviceInfo["battery"])
+                    } else {
+                        result.success(null)
+                    }
                 }
                 else -> {
                     result.notImplemented()
@@ -307,31 +312,54 @@ class MainActivity: FlutterActivity(), IResponseListener {
     }
     
     private fun handleConnectionStateChange(state: Int) {
-        currentConnectionState = when (state) {
+        when (state) {
             BLEService.CONNECT_STATE_SUCCESS -> {
                 isConnected = true
-                android.util.Log.d("OpenRing", "✅ 连接成功，isConnected = true")
                 val device = GlobalParameterUtils.getInstance().device
                 currentDeviceName = device?.name ?: currentDeviceName
                 currentDeviceAddress = device?.address ?: currentDeviceAddress
                 lastConnectedIso = Instant.now().toString()
-                "connected"
+                currentConnectionState = "connected"
+                android.util.Log.d("OpenRing", "✅ 连接成功，isConnected = true")
             }
-            BLEService.CONNECT_STATE_DISCONNECTED -> {
+            BLEService.CONNECT_STATE_GATT_CONNECTING,
+            BLEService.CONNECT_STATE_GATT_CONNECTED,
+            BLEService.CONNECT_STATE_SERVICE_CONNECTING,
+            BLEService.CONNECT_STATE_SERVICE_CONNECTED,
+            BLEService.CONNECT_STATE_WRITE_CONNECTING,
+            BLEService.CONNECT_STATE_RESPOND_CONNECTING -> {
+                // 连接过程中的过渡状态，保持已连接标记不变
+                val stage = when (state) {
+                    BLEService.CONNECT_STATE_GATT_CONNECTING -> "GATT_CONNECTING"
+                    BLEService.CONNECT_STATE_GATT_CONNECTED -> "GATT_CONNECTED"
+                    BLEService.CONNECT_STATE_SERVICE_CONNECTING -> "SERVICE_CONNECTING"
+                    BLEService.CONNECT_STATE_SERVICE_CONNECTED -> "SERVICE_CONNECTED"
+                    BLEService.CONNECT_STATE_WRITE_CONNECTING -> "WRITE_CONNECTING"
+                    BLEService.CONNECT_STATE_RESPOND_CONNECTING -> "RESPOND_CONNECTING"
+                    else -> "CONNECTING"
+                }
+                if (!isConnected) {
+                    currentConnectionState = "connecting"
+                } else {
+                    currentConnectionState = "connected"
+                }
+                android.util.Log.d("OpenRing", "🔄 连接阶段($stage)，当前状态: $currentConnectionState")
+            }
+            BLEService.CONNECT_STATE_DISCONNECTED,
+            BLEService.CONNECT_STATE_SERVICE_DISCONNECTED,
+            BLEService.CONNECT_STATE_WRITE_DISCONNECTED,
+            BLEService.CONNECT_STATE_RESPOND_DISCONNECTED -> {
                 isConnected = false
-                android.util.Log.d("OpenRing", "❌ 已断连，isConnected = false")
-                "disconnected"
-            }
-            BLEService.CONNECT_STATE_GATT_CONNECTING -> {
-                android.util.Log.d("OpenRing", "⏳ 连接中...")
-                "connecting"
+                currentConnectionState = "disconnected"
+                currentDeviceName = null
+                currentDeviceAddress = null
+                android.util.Log.d("OpenRing", "❌ 已断连，isConnected = false (state=$state)")
             }
             else -> {
-                android.util.Log.d("OpenRing", "❓ 未知连接状态: $state")
-                "unknown"
+                android.util.Log.w("OpenRing", "⚠️ 未识别的连接状态码: $state")
             }
         }
-        
+
         handler.post {
             emitConnectionEvent(statusCode = state)
         }
@@ -493,17 +521,28 @@ class MainActivity: FlutterActivity(), IResponseListener {
         if (!currentDeviceAddress.isNullOrEmpty()) {
             event["address"] = currentDeviceAddress
         }
+        android.util.Log.d("OpenRing", "📤 发送连接事件: state=$currentConnectionState, name=$currentDeviceName, address=$currentDeviceAddress, eventSink=${if (eventSink != null) "已连接" else "未连接"}")
         sendEvent(event)
     }
 
     private fun buildConnectedDeviceInfo(): Map<String, Any?>? {
+        android.util.Log.d("OpenRing", "📋 buildConnectedDeviceInfo 被调用: currentConnectionState=$currentConnectionState, isConnected=$isConnected")
+        
         if (currentConnectionState != "connected") {
+            android.util.Log.d("OpenRing", "📋 返回 null，因为状态不是 connected")
             return null
         }
 
         val device = GlobalParameterUtils.getInstance().device
-        val address = currentDeviceAddress ?: device?.address ?: return null
+        val address = currentDeviceAddress ?: device?.address
         val name = currentDeviceName ?: device?.name ?: "OpenRing"
+        
+        android.util.Log.d("OpenRing", "📋 设备信息: name=$name, address=$address")
+        
+        if (address == null) {
+            android.util.Log.d("OpenRing", "📋 返回 null，因为没有地址")
+            return null
+        }
 
         return mapOf(
             "name" to name,

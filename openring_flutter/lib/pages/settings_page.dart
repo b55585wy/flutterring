@@ -35,10 +35,10 @@ class _SettingsPageState extends State<SettingsPage> {
     _bleSubscription = RingPlatform.eventStream.listen((event) {
       event.maybeWhen(
         connectionStateChanged: (state, name, address) {
-          final connected = state == ble.ConnectionState.connected;
-          if (connected) {
+          // 连接中或已连接时都视为"连接状态"
+          if (state == ble.ConnectionState.connected) {
             _loadConnectedDevice();
-          } else {
+          } else if (state == ble.ConnectionState.disconnected) {
             setState(() {
               _isConnected = false;
               _deviceInfo = null;

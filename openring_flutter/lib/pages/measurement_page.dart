@@ -92,9 +92,11 @@ class _MeasurementPageState extends State<MeasurementPage>
         connectionStateChanged: (state, name, address) {
           if (!mounted) return;
           setState(() {
-            _isConnected = (state == ble.ConnectionState.connected);
+            // 连接中或已连接时都视为"连接状态"，避免UI闪烁
+            _isConnected = (state == ble.ConnectionState.connected ||
+                state == ble.ConnectionState.connecting);
 
-            // 如果断连，停止测量
+            // 只有真正断连时才停止测量
             if (state == ble.ConnectionState.disconnected && _isRecording) {
               _isRecording = false;
               _heartRate = 0;
