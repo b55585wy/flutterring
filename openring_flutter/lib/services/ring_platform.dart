@@ -12,12 +12,16 @@ class RingPlatform {
   /// 事件流（统一的 BLE 事件）
   static Stream<BleEvent> get eventStream {
     return _eventChannel.receiveBroadcastStream().map((event) {
+      print('🔵 Flutter Platform: 收到原始事件 - $event');
+      
       final map = Map<String, dynamic>.from(event as Map);
       final type = map['type'] as String;
+      print('🔵 Flutter Platform: 事件类型 - $type');
 
       switch (type) {
         case 'deviceFound':
           final device = Map<String, dynamic>.from(map['device'] as Map);
+          print('🔵 Flutter Platform: 解析设备 - ${device['name']} (${device['address']})');
           return BleEvent.deviceFound(
             name: device['name'] as String,
             address: device['address'] as String,

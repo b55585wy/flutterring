@@ -524,7 +524,17 @@ class MainActivity: FlutterActivity(), IResponseListener {
     }
     
     private fun sendEvent(event: Map<String, Any?>) {
-        eventSink?.success(event)
+        android.util.Log.d("OpenRing", "📤 尝试发送事件: type=${event["type"]}, eventSink=${if (eventSink != null) "有效" else "null"}")
+        if (eventSink == null) {
+            android.util.Log.w("OpenRing", "⚠️ EventSink 为 null，事件未发送")
+            return
+        }
+        try {
+            eventSink?.success(event)
+            android.util.Log.d("OpenRing", "✅ 事件发送成功")
+        } catch (e: Exception) {
+            android.util.Log.e("OpenRing", "❌ 事件发送失败: ${e.message}", e)
+        }
     }
 
     private fun syncConnectionState() {
