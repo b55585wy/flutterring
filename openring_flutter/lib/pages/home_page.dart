@@ -123,17 +123,21 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
 
   Future<void> _checkConnectionStatus() async {
     try {
+      print('🔵 Flutter Home: 开始检查连接状态...');
       // 主动检查是否有已连接的设备
       final device = await RingPlatform.getConnectedDevice();
+      print('🔵 Flutter Home: getConnectedDevice 返回 - $device');
       if (mounted && device != null) {
         setState(() {
           _isConnected = true;
           _deviceInfo = device;
         });
-        print('🔵 Flutter Home: 检测到已连接设备 - ${device.name}');
+        print('🔵 Flutter Home: ✅ 检测到已连接设备 - ${device.name} (${device.address})');
+      } else {
+        print('🔵 Flutter Home: ❌ 没有已连接的设备');
       }
     } catch (e) {
-      print('🔵 Flutter Home: 检查连接状态失败 - $e');
+      print('🔵 Flutter Home: ⚠️ 检查连接状态失败 - $e');
     }
   }
 
@@ -141,6 +145,8 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
     RingPlatform.eventStream.listen((event) {
       event.when(
         deviceFound: (name, address, rssi) {
+          print(
+              '🔵 Flutter Home: 发现设备 - name=$name, address=$address, rssi=$rssi');
           setState(() {
             // 去重：检查是否已存在相同地址的设备
             final exists =
@@ -150,8 +156,13 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
                 'name': name,
                 'address': address,
               });
+              print('🔵 Flutter Home: 添加到列表，当前设备数: ${_foundDevices.length}');
+            } else {
+              print('🔵 Flutter Home: 设备已存在，跳过');
             }
           });
+          print(
+              '🔵 Flutter Home: _deviceSheetSetState = ${_deviceSheetSetState != null ? "有效" : "null"}');
           _deviceSheetSetState?.call(() {});
         },
         scanCompleted: () {

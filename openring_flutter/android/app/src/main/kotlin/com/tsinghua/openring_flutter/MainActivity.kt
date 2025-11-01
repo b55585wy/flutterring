@@ -62,6 +62,9 @@ class MainActivity: FlutterActivity(), IResponseListener {
         LmAPI.setDebug(true)
         LmAPI.addWLSCmdListener(this, this)
         
+        // 🔄 尽早同步连接状态（在配置 Channel 之前）
+        syncConnectionState()
+        
         // 注册广播接收器
         val filter = IntentFilter().apply {
             addAction(BLEService.BROADCAST_CONNECT_STATE_CHANGE)
@@ -129,6 +132,8 @@ class MainActivity: FlutterActivity(), IResponseListener {
         eventChannel?.setStreamHandler(object : EventChannel.StreamHandler {
             override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
                 eventSink = events
+                // 检查实际连接状态并同步
+                syncConnectionState()
                 emitConnectionEvent()
             }
             
@@ -321,6 +326,21 @@ class MainActivity: FlutterActivity(), IResponseListener {
                 lastConnectedIso = Instant.now().toString()
                 currentConnectionState = "connected"
                 android.util.Log.d("OpenRing", "✅ 连接成功，isConnected = true")
+                
+                // 💾 保存设备信息到 SharedPreferences
+                if (currentDeviceAddress != null) {
+                    try {
+                        val prefs = getSharedPreferences("OpenRingPrefs", MODE_PRIVATE)
+                        prefs.edit().apply {
+                            putString("last_device_address", currentDeviceAddress)
+                            putString("last_device_name", currentDeviceName)
+                            apply()
+                        }
+                        android.util.Log.d("OpenRing", "💾 设备信息已保存到 SharedPreferences")
+                    } catch (e: Exception) {
+                        android.util.Log.w("OpenRing", "⚠️ 保存设备信息失败: ${e.message}")
+                    }
+                }
             }
             BLEService.CONNECT_STATE_GATT_CONNECTING,
             BLEService.CONNECT_STATE_GATT_CONNECTED,
@@ -505,6 +525,71 @@ class MainActivity: FlutterActivity(), IResponseListener {
     
     private fun sendEvent(event: Map<String, Any?>) {
         eventSink?.success(event)
+    }
+
+    private fun syncConnectionState() {
+        try {
+            android.util.Log.d("OpenRing", "🔄 开始同步连接状态...")
+            
+            // 1. 先检查 GlobalParameterUtils 中是否有设备信息（运行时缓存）
+            var device = GlobalParameterUtils.getInstance().device
+            if (device != null) {
+                android.util.Log.d("OpenRing", "🔄 从 GlobalParameterUtils 发现设备: ${device.name} - ${device.address}")
+            } else {
+                // 2. 如果没有，尝试从 SharedPreferences 恢复（持久化存储）
+                android.util.Log.d("OpenRing", "ℹ️ GlobalParameterUtils 中没有设备，尝试从 SharedPreferences 恢复...")
+                val prefs = getSharedPreferences("OpenRingPrefs", MODE_PRIVATE)
+                val savedAddress = prefs.getString("last_device_address", null)
+                val savedName = prefs.getString("last_device_name", null)
+                
+                if (savedAddress != null) {
+                    android.util.Log.d("OpenRing", "📦 从 SharedPreferences 恢复设备: $savedName - $savedAddress")
+                    
+                    // 尝试重新创建设备对象
+                    try {
+                        val adapter = BluetoothAdapter.getDefaultAdapter()
+                        if (adapter != null && adapter.isEnabled) {
+                            device = adapter.getRemoteDevice(savedAddress)
+                            // 恢复到 GlobalParameterUtils
+                            GlobalParameterUtils.getInstance().device = device
+                            android.util.Log.d("OpenRing", "✅ 设备对象已重建并恢复到 GlobalParameterUtils")
+                        }
+                    } catch (e: Exception) {
+                        android.util.Log.w("OpenRing", "⚠️ 无法重建设备对象: ${e.message}")
+                    }
+                } else {
+                    android.util.Log.d("OpenRing", "ℹ️ SharedPreferences 中也没有保存的设备信息")
+                }
+            }
+            
+            // 3. 如果找到了设备信息，更新连接状态
+            if (device != null) {
+                val deviceName = device.name ?: currentDeviceName
+                val deviceAddress = device.address
+                
+                android.util.Log.d("OpenRing", "🔄 准备同步设备状态: $deviceName - $deviceAddress")
+                
+                // 检查蓝牙适配器状态
+                val adapter = BluetoothAdapter.getDefaultAdapter()
+                if (adapter == null || !adapter.isEnabled) {
+                    android.util.Log.w("OpenRing", "⚠️ 蓝牙未启用，无法确认连接状态")
+                    return
+                }
+                
+                // 更新状态（注意：这里不能确定是否真的连接，只是恢复了设备信息）
+                currentDeviceName = deviceName
+                currentDeviceAddress = deviceAddress
+                // ⚠️ 不要设置为 connected，因为我们不确定是否真的连接
+                // isConnected = true
+                // currentConnectionState = "connected"
+                lastConnectedIso = Instant.now().toString()
+                android.util.Log.d("OpenRing", "✅ 设备信息已恢复，但连接状态保持为 disconnected（需要重新连接）")
+            } else {
+                android.util.Log.d("OpenRing", "ℹ️ 没有任何设备信息，状态保持为 disconnected")
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("OpenRing", "❌ 同步连接状态失败: ${e.message}", e)
+        }
     }
 
     private fun emitConnectionEvent(statusCode: Int? = null) {

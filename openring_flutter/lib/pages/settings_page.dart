@@ -52,13 +52,18 @@ class _SettingsPageState extends State<SettingsPage> {
 
   Future<void> _loadConnectedDevice() async {
     try {
+      print('🔵 Flutter Settings: 开始加载设备信息');
       final device = await RingPlatform.getConnectedDevice();
+      print('🔵 Flutter Settings: 获取到设备 - $device');
       if (!mounted) return;
       setState(() {
         _deviceInfo = device;
         _isConnected = device != null;
       });
-    } catch (_) {
+      print(
+          '🔵 Flutter Settings: _isConnected = $_isConnected, name = ${device?.name}, address = ${device?.address}');
+    } catch (e) {
+      print('🔵 Flutter Settings: 加载设备信息失败 - $e');
       if (!mounted) return;
       setState(() {
         _isConnected = false;
@@ -86,18 +91,20 @@ class _SettingsPageState extends State<SettingsPage> {
               [
                 _buildSettingItem(
                   Icons.bluetooth_connected,
-                  '已连接设备',
+                  '连接状态',
                   _isConnected
-                      ? '${_deviceInfo?.name ?? 'OpenRing'} (已连接)'
+                      ? '已连接'
                       : '未连接',
-                  const Color(0xFF6366F1),
+                  _isConnected ? const Color(0xFF10B981) : const Color(0xFF94A3B8),
                   _loadConnectedDevice,
                 ),
                 _buildSettingItem(
                   Icons.devices,
                   '设备信息',
-                  _deviceInfo?.address ?? '查看详情',
-                  const Color(0xFF10B981),
+                  _deviceInfo != null
+                      ? '${_deviceInfo?.name ?? 'OpenRing'}\n${_deviceInfo?.address ?? '未知地址'}'
+                      : '暂无设备',
+                  const Color(0xFF6366F1),
                   _loadConnectedDevice,
                 ),
                 _buildSettingItem(
