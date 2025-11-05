@@ -115,6 +115,7 @@ public class MainActivity extends AppCompatActivity implements IResponseListener
     private Button stopMeasurementButton;
     private TextView measurementStatusText;
     private PlotView plotViewG, plotViewI, plotViewR;
+    private PlotView plotViewHRWave;
     private PlotView plotViewX, plotViewY, plotViewZ;
     private PlotView plotViewGyroX, plotViewGyroY, plotViewGyroZ;
     private PlotView plotViewTemp0, plotViewTemp1, plotViewTemp2;
@@ -122,7 +123,7 @@ public class MainActivity extends AppCompatActivity implements IResponseListener
     
     // HR/RR Display Components
     private TextView heartRateValue;
-    private TextView respiratoryRateValue;
+    // Removed secondary numeric TextView; right column shows waveform plot
     private TextView signalQualityIndicator;
     private TextView lastUpdateTime;
     
@@ -364,6 +365,7 @@ public class MainActivity extends AppCompatActivity implements IResponseListener
         plotViewG = findViewById(R.id.plotViewG);
         plotViewI = findViewById(R.id.plotViewI);
         plotViewR = findViewById(R.id.plotViewR);
+        plotViewHRWave = findViewById(R.id.plotViewHRWave);
         plotViewX = findViewById(R.id.plotViewX);
         plotViewY = findViewById(R.id.plotViewY);
         plotViewZ = findViewById(R.id.plotViewZ);
@@ -376,7 +378,7 @@ public class MainActivity extends AppCompatActivity implements IResponseListener
         
         // HR/RR Display Components
         heartRateValue = findViewById(R.id.heartRateValue);
-        respiratoryRateValue = findViewById(R.id.respiratoryRateValue);
+        // secondary numeric TextView removed; right column is a PlotView
         signalQualityIndicator = findViewById(R.id.signalQualityIndicator);
         lastUpdateTime = findViewById(R.id.lastUpdateTime);
 
@@ -400,6 +402,7 @@ public class MainActivity extends AppCompatActivity implements IResponseListener
         if (plotViewG != null) plotViewG.setPlotColor(Color.parseColor("#4CAF50"));
         if (plotViewI != null) plotViewI.setPlotColor(Color.parseColor("#FF9800"));
         if (plotViewR != null) plotViewR.setPlotColor(Color.parseColor("#F44336"));
+        if (plotViewHRWave != null) plotViewHRWave.setPlotColor(Color.parseColor("#2196F3"));
         if (plotViewX != null) plotViewX.setPlotColor(Color.parseColor("#2196F3"));
         if (plotViewY != null) plotViewY.setPlotColor(Color.parseColor("#9C27B0"));
         if (plotViewZ != null) plotViewZ.setPlotColor(Color.parseColor("#00BCD4"));
@@ -423,7 +426,7 @@ public class MainActivity extends AppCompatActivity implements IResponseListener
         
         // Initialize HR/RR display with default values
         if (heartRateValue != null) heartRateValue.setText("--");
-        if (respiratoryRateValue != null) respiratoryRateValue.setText("--");
+        // no secondary numeric value now
         if (signalQualityIndicator != null) {
             signalQualityIndicator.setText("No Signal");
             signalQualityIndicator.setTextColor(Color.parseColor("#9E9E9E"));
@@ -436,6 +439,7 @@ public class MainActivity extends AppCompatActivity implements IResponseListener
         NotificationHandler.setPlotViewG(plotViewG);
         NotificationHandler.setPlotViewI(plotViewI);
         NotificationHandler.setPlotViewR(plotViewR);
+        NotificationHandler.setPlotViewHRWave(plotViewHRWave);
         NotificationHandler.setPlotViewX(plotViewX);
         NotificationHandler.setPlotViewY(plotViewY);
         NotificationHandler.setPlotViewZ(plotViewZ);
@@ -546,21 +550,12 @@ public class MainActivity extends AppCompatActivity implements IResponseListener
                     if (heartRateValue != null) {
                         heartRateValue.setText(String.valueOf(heartRate));
                     }
+                    // right column now shows waveform only
                     updateLastUpdateTime();
                     recordLog("Heart Rate: " + heartRate + " BPM");
                 });
             }
 
-            @Override
-            public void onRespiratoryRateUpdate(int respiratoryRate) {
-                mainHandler.post(() -> {
-                    if (respiratoryRateValue != null) {
-                        respiratoryRateValue.setText(String.valueOf(respiratoryRate));
-                    }
-                    updateLastUpdateTime();
-                    recordLog("Respiratory Rate: " + respiratoryRate + " RPM");
-                });
-            }
 
             @Override
             public void onSignalQualityUpdate(VitalSignsProcessor.SignalQuality quality) {
@@ -1371,7 +1366,7 @@ public class MainActivity extends AppCompatActivity implements IResponseListener
     private void clearVitalSignsDisplay() {
         mainHandler.post(() -> {
             if (heartRateValue != null) heartRateValue.setText("--");
-            if (respiratoryRateValue != null) respiratoryRateValue.setText("--");
+            // no secondary numeric value now
             if (signalQualityIndicator != null) {
                 signalQualityIndicator.setText("No Signal");
                 signalQualityIndicator.setTextColor(Color.parseColor("#9E9E9E"));

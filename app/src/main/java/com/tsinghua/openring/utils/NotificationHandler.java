@@ -12,6 +12,7 @@ public class NotificationHandler {
     // Real-time data display PlotViews
     private static PlotView plotViewG, plotViewI;
     private static PlotView plotViewR, plotViewX;
+    private static PlotView plotViewHRWave; // filtered PPG for HR display
     private static PlotView plotViewY, plotViewZ;
     private static PlotView plotViewGyroX, plotViewGyroY, plotViewGyroZ;
     private static PlotView plotViewTemp0, plotViewTemp1, plotViewTemp2;
@@ -121,6 +122,9 @@ public class NotificationHandler {
     public static void setPlotViewTemp0(PlotView chartView) { plotViewTemp0 = chartView; }
     public static void setPlotViewTemp1(PlotView chartView) { plotViewTemp1 = chartView; }
     public static void setPlotViewTemp2(PlotView chartView) { plotViewTemp2 = chartView; }
+
+    // New: HR waveform plot view
+    public static void setPlotViewHRWave(PlotView chartView) { plotViewHRWave = chartView; }
 
     public interface LogRecorder {
         void recordLog(String message);
@@ -1073,6 +1077,12 @@ public class NotificationHandler {
             if (plotViewR != null) plotViewR.addValue((int)red);
             if (plotViewI != null) plotViewI.addValue((int)ir);
 
+            // Lightweight smoothing for HR waveform display (moving average over last N points)
+            if (plotViewHRWave != null) {
+                int filtered = (int) simpleSMA((int)green);
+                plotViewHRWave.addValue(filtered);
+            }
+
             // Update acceleration charts
             if (plotViewX != null) plotViewX.addValue(accX);
             if (plotViewY != null) plotViewY.addValue(accY);
@@ -1091,6 +1101,19 @@ public class NotificationHandler {
         } catch (Exception e) {
             Log.e(TAG, "Error updating realtime charts", e);
         }
+    }
+
+    // Simple moving average (SMA) over a short window for display smoothing
+    private static final int HR_SMA_WINDOW = 5;
+    private static final Deque<Integer> hrSmaBuffer = new ArrayDeque<>();
+    private static long hrSmaSum = 0;
+    private static int simpleSMA(int value) {
+        hrSmaBuffer.addLast(value);
+        hrSmaSum += value;
+        if (hrSmaBuffer.size() > HR_SMA_WINDOW) {
+            hrSmaSum -= hrSmaBuffer.removeFirst();
+        }
+        return (int)(hrSmaSum / hrSmaBuffer.size());
     }
 
     /**
