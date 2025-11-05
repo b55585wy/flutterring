@@ -40,6 +40,7 @@ import com.lm.sdk.utils.GlobalParameterUtils;
 import com.tsinghua.openring.R;
 import com.tsinghua.openring.PlotView;
 import com.tsinghua.openring.utils.BLEService;
+import com.tsinghua.openring.inference.ModelInferenceManager;
 import com.tsinghua.openring.utils.NotificationHandler;
 import com.tsinghua.openring.utils.VitalSignsProcessor;
 
@@ -129,6 +130,7 @@ public class MainActivity extends AppCompatActivity implements IResponseListener
     
     // Vital Signs Processor
     private VitalSignsProcessor vitalSignsProcessor;
+    private ModelInferenceManager modelInferenceManager;
 
     // File Operation Related
     private List<FileInfo> fileList = new ArrayList<>();
@@ -571,6 +573,36 @@ public class MainActivity extends AppCompatActivity implements IResponseListener
         
         // Set the vital signs processor in NotificationHandler
         NotificationHandler.setVitalSignsProcessor(vitalSignsProcessor);
+        
+        // Initialize transformer inference manager
+        modelInferenceManager = new ModelInferenceManager(getApplicationContext(), new ModelInferenceManager.Listener() {
+            @Override
+            public void onHrPredicted(int bpm) {
+                mainHandler.post(() -> {
+                    if (heartRateValue != null) {
+                        heartRateValue.setText(String.valueOf(bpm));
+                    }
+                    recordLog("[Model] HR: " + bpm + " BPM");
+                });
+            }
+
+            @Override
+            public void onBpSysPredicted(int mmHg) {
+                recordLog("[Model] BP_SYS: " + mmHg + " mmHg");
+            }
+
+            @Override
+            public void onBpDiaPredicted(int mmHg) {
+                recordLog("[Model] BP_DIA: " + mmHg + " mmHg");
+            }
+
+            @Override
+            public void onSpo2Predicted(int percent) {
+                recordLog("[Model] SpO2: " + percent + "%");
+            }
+        });
+        modelInferenceManager.init();
+        NotificationHandler.setInferenceManager(modelInferenceManager);
         
         recordLog("Vital Signs Processor initialized");
     }

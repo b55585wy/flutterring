@@ -39,6 +39,11 @@ android {
         sourceCompatibility JavaVersion.VERSION_11
         targetCompatibility JavaVersion.VERSION_11
     }
+    sourceSets {
+        main {
+            assets.srcDirs += ['models']
+        }
+    }
 }
 
 dependencies {
@@ -139,5 +144,8 @@ dependencies {
 
     // system浮窗需要使用compose时
     implementation 'io.github.petterpx:floatingx-compose:2.3.2'
+
+    // PyTorch Android Lite for on-device inference
+    implementation 'org.pytorch:pytorch_android_lite:1.13.1'
 
 }

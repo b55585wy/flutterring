@@ -132,11 +132,18 @@ public class NotificationHandler {
 
     private static LogRecorder logRecorder;
     private static VitalSignsProcessor vitalSignsProcessor;
+    private static com.tsinghua.openring.inference.ModelInferenceManager inferenceManager;
 
     // Add method to set vital signs processor
     public static void setVitalSignsProcessor(VitalSignsProcessor processor) {
         vitalSignsProcessor = processor;
         recordLog("VitalSignsProcessor connected to NotificationHandler");
+    }
+
+    // Inference manager setter
+    public static void setInferenceManager(com.tsinghua.openring.inference.ModelInferenceManager manager) {
+        inferenceManager = manager;
+        recordLog("InferenceManager connected to NotificationHandler");
     }
 
     // Add method to set log recorder
@@ -1050,6 +1057,12 @@ public class NotificationHandler {
             if (vitalSignsProcessor != null) {
                 long timestamp = System.currentTimeMillis();
                 vitalSignsProcessor.addDataPoint(green, ir, accX, accY, accZ, timestamp);
+            }
+
+            // Feed data to inference manager
+            if (inferenceManager != null) {
+                long ts = System.currentTimeMillis();
+                inferenceManager.onSensorData(green, red, ir, accX, accY, accZ, ts);
             }
 
             Log.v(TAG, String.format("Realtime point: G:%d, R:%d, IR:%d, AccX:%d, AccY:%d, AccZ:%d, GyroX:%d, GyroY:%d, GyroZ:%d, T0:%d, T1:%d, T2:%d",
