@@ -152,9 +152,22 @@ public class ModelInferenceManager {
 
                 String jsonPath = null;
                 String ptPath = null;
+                // Prefer TorchScript files with _ts suffix if available
                 for (String f : foldFiles) {
-                    if (f.endsWith(".json")) jsonPath = foldDir + "/" + f;
-                    if (f.endsWith(".pt")) ptPath = foldDir + "/" + f;
+                    if (f.endsWith(".json")) {
+                        jsonPath = foldDir + "/" + f;
+                    }
+                    if (f.endsWith("_ts.pt")) {
+                        ptPath = foldDir + "/" + f;
+                    }
+                }
+                if (ptPath == null) {
+                    for (String f : foldFiles) {
+                        if (f.endsWith(".pt")) {
+                            ptPath = foldDir + "/" + f;
+                            break;
+                        }
+                    }
                 }
                 if (jsonPath != null && ptPath != null) {
                     // Load config (only once per mission, prefer first)
