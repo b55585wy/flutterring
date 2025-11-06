@@ -145,7 +145,7 @@ dependencies {
     // system浮窗需要使用compose时
     implementation 'io.github.petterpx:floatingx-compose:2.3.2'
 
-    // PyTorch Android Lite for on-device inference
-    implementation 'org.pytorch:pytorch_android_lite:1.13.1'
+    // PyTorch Android (standard) for on-device inference (compatible with regular TorchScript)
+    implementation 'org.pytorch:pytorch_android:1.13.1'
 
 }
