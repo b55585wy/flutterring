@@ -124,6 +124,9 @@ public class MainActivity extends AppCompatActivity implements IResponseListener
     
     // HR/RR Display Components
     private TextView heartRateValue;
+    private TextView bpSysValue;
+    private TextView bpDiaValue;
+    private TextView spo2Value;
     // Removed secondary numeric TextView; right column shows waveform plot
     private TextView signalQualityIndicator;
     private TextView lastUpdateTime;
@@ -380,6 +383,9 @@ public class MainActivity extends AppCompatActivity implements IResponseListener
         
         // HR/RR Display Components
         heartRateValue = findViewById(R.id.heartRateValue);
+        bpSysValue = findViewById(R.id.bpSysValue);
+        bpDiaValue = findViewById(R.id.bpDiaValue);
+        spo2Value = findViewById(R.id.spo2Value);
         // secondary numeric TextView removed; right column is a PlotView
         signalQualityIndicator = findViewById(R.id.signalQualityIndicator);
         lastUpdateTime = findViewById(R.id.lastUpdateTime);
@@ -428,6 +434,9 @@ public class MainActivity extends AppCompatActivity implements IResponseListener
         
         // Initialize HR/RR display with default values
         if (heartRateValue != null) heartRateValue.setText("--");
+        if (bpSysValue != null) bpSysValue.setText("--");
+        if (bpDiaValue != null) bpDiaValue.setText("--");
+        if (spo2Value != null) spo2Value.setText("--");
         // no secondary numeric value now
         if (signalQualityIndicator != null) {
             signalQualityIndicator.setText("No Signal");
@@ -588,17 +597,26 @@ public class MainActivity extends AppCompatActivity implements IResponseListener
 
             @Override
             public void onBpSysPredicted(int mmHg) {
-                recordLog("[Model] BP_SYS: " + mmHg + " mmHg");
+                mainHandler.post(() -> {
+                    if (bpSysValue != null) bpSysValue.setText(String.valueOf(mmHg));
+                    recordLog("[Model] BP_SYS: " + mmHg + " mmHg");
+                });
             }
 
             @Override
             public void onBpDiaPredicted(int mmHg) {
-                recordLog("[Model] BP_DIA: " + mmHg + " mmHg");
+                mainHandler.post(() -> {
+                    if (bpDiaValue != null) bpDiaValue.setText(String.valueOf(mmHg));
+                    recordLog("[Model] BP_DIA: " + mmHg + " mmHg");
+                });
             }
 
             @Override
             public void onSpo2Predicted(int percent) {
-                recordLog("[Model] SpO2: " + percent + "%");
+                mainHandler.post(() -> {
+                    if (spo2Value != null) spo2Value.setText(String.valueOf(percent));
+                    recordLog("[Model] SpO2: " + percent + "%");
+                });
             }
         });
         modelInferenceManager.init();
@@ -1398,6 +1416,9 @@ public class MainActivity extends AppCompatActivity implements IResponseListener
     private void clearVitalSignsDisplay() {
         mainHandler.post(() -> {
             if (heartRateValue != null) heartRateValue.setText("--");
+            if (bpSysValue != null) bpSysValue.setText("--");
+            if (bpDiaValue != null) bpDiaValue.setText("--");
+            if (spo2Value != null) spo2Value.setText("--");
             // no secondary numeric value now
             if (signalQualityIndicator != null) {
                 signalQualityIndicator.setText("No Signal");
