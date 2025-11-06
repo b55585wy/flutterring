@@ -557,14 +557,7 @@ public class MainActivity extends AppCompatActivity implements IResponseListener
         vitalSignsProcessor = new VitalSignsProcessor(new VitalSignsProcessor.VitalSignsCallback() {
             @Override
             public void onHeartRateUpdate(int heartRate) {
-                mainHandler.post(() -> {
-                    if (heartRateValue != null) {
-                        heartRateValue.setText(String.valueOf(heartRate));
-                    }
-                    // right column now shows waveform only
-                    updateLastUpdateTime();
-                    recordLog("Heart Rate: " + heartRate + " BPM");
-                });
+                // Transformer-only for HR: ignore traditional HR UI updates
             }
 
 
@@ -591,6 +584,7 @@ public class MainActivity extends AppCompatActivity implements IResponseListener
                     if (heartRateValue != null) {
                         heartRateValue.setText(String.valueOf(bpm));
                     }
+                    updateLastUpdateTime();
                     recordLog("[Model] HR: " + bpm + " BPM");
                 });
             }
