@@ -50,6 +50,8 @@ public class ModelInferenceManager {
     }
 
     public void init() {
+        logDebug("ModelInferenceManager.init() called");
+        logDebug("Listener is " + (listener == null ? "null" : listener.getClass().getName()));
         logAssetListing("", "root");
         logAssetListing("transformer-ring1-hr-all-irred", "hr-all-irred");
         logAssetListing("transformer-ring1-bp-all-irred", "bp-all-irred");
@@ -112,6 +114,7 @@ public class ModelInferenceManager {
     }
 
     public String reportStatus() {
+        logDebug("reportStatus() invoked");
         StringBuilder sb = new StringBuilder();
         for (Mission m : Mission.values()) {
             List<Module> list = missionModules.get(m);
@@ -122,6 +125,7 @@ public class ModelInferenceManager {
     }
 
     private void loadMission(Mission mission, String missionRoot) {
+        logDebug("loadMission called: " + mission + " root=" + missionRoot);
         if (missionRoot == null) {
             Log.w(TAG, "Mission root not found: " + mission);
             logDebug("Mission root not found for " + mission);
@@ -130,6 +134,7 @@ public class ModelInferenceManager {
         try {
             String[] subDirs = appContext.getAssets().list(missionRoot);
             if (subDirs == null) {
+                logDebug("Mission root has no subdirs: " + missionRoot);
                 logDebug("Mission root has no subdirs: " + missionRoot);
                 return;
             }
@@ -140,6 +145,7 @@ public class ModelInferenceManager {
                 String foldDir = missionRoot + "/" + sub;
                 String[] foldFiles = appContext.getAssets().list(foldDir);
                 if (foldFiles == null) {
+                    logDebug("Fold directory empty: " + foldDir);
                     logDebug("Fold directory empty: " + foldDir);
                     continue;
                 }
