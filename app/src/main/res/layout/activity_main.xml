@@ -582,7 +582,7 @@
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="BP & SpO2"
+                            android:text="BP &amp; SpO2"
                             android:textSize="16sp"
                             android:textStyle="bold"
                             android:textColor="@android:color/black"
