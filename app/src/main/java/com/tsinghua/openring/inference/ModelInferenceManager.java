@@ -181,7 +181,7 @@ public class ModelInferenceManager {
     }
 
     private void runAllMissions() {
-        // Prepare input tensor [1, T, C] with C=2 (green, ir)
+        // Prepare input tensor [1, C, T] with C=2 (green, ir)
         int targetLength = windowSeconds * targetFs;
         if (targetLength <= 0) {
             logDebug("Target length invalid: " + targetLength);
@@ -197,15 +197,16 @@ public class ModelInferenceManager {
 
         float[] input = new float[targetLength * 2];
         for (int i = 0; i < targetLength; i++) {
-            input[i * 2] = resampledGreen[i];
-            input[i * 2 + 1] = resampledIr[i];
+            input[i] = resampledGreen[i]; // channel 0
+            input[targetLength + i] = resampledIr[i]; // channel 1
         }
 
         // normalize per-channel (zero mean, unit var) for numerical stability
-        normalizeInPlace(input, 2, targetLength);
+        normalizeInPlace(input, targetLength);
 
-        long[] shape = new long[]{1, targetLength, 2};
+        long[] shape = new long[]{1, 2, targetLength};
         Tensor tensor = Tensor.fromBlob(input, shape);
+        logDebug("Inference window ready: targetLength=" + targetLength);
 
         // HR
         if (hasMission(Mission.HR)) {
@@ -298,22 +299,24 @@ public class ModelInferenceManager {
         return out;
     }
 
-    private void normalizeInPlace(float[] data, int channels, int T) {
+    private void normalizeInPlace(float[] data, int lengthPerChannel) {
+        int channels = 2;
         for (int c = 0; c < channels; c++) {
+            int offset = c * lengthPerChannel;
             double mean = 0;
-            for (int t = 0; t < T; t++) {
-                mean += data[t * channels + c];
+            for (int t = 0; t < lengthPerChannel; t++) {
+                mean += data[offset + t];
             }
-            mean /= T;
+            mean /= lengthPerChannel;
             double var = 0;
-            for (int t = 0; t < T; t++) {
-                double v = data[t * channels + c] - mean;
+            for (int t = 0; t < lengthPerChannel; t++) {
+                double v = data[offset + t] - mean;
                 var += v * v;
             }
-            double std = Math.sqrt(var / Math.max(1, T - 1));
+            double std = Math.sqrt(var / Math.max(1, lengthPerChannel - 1));
             if (std < 1e-6) std = 1.0;
-            for (int t = 0; t < T; t++) {
-                data[t * channels + c] = (float) ((data[t * channels + c] - mean) / std);
+            for (int t = 0; t < lengthPerChannel; t++) {
+                data[offset + t] = (float) ((data[offset + t] - mean) / std);
             }
         }
     }
