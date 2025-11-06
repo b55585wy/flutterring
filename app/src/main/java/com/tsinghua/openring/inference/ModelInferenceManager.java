@@ -50,6 +50,11 @@ public class ModelInferenceManager {
     }
 
     public void init() {
+        logAssetListing("", "root");
+        logAssetListing("transformer-ring1-hr-all-irred", "hr-all-irred");
+        logAssetListing("transformer-ring1-bp-all-irred", "bp-all-irred");
+        logAssetListing("transformer-ring1-spo2-all-irred", "spo2-all-irred");
+
         // Try load four missions. Assets are mapped to app/models/** by Gradle.
         loadMission(Mission.HR, findFirstMissionRoot("hr"));
         loadMission(Mission.BP_SYS, findFirstMissionRoot("BP_sys"));
@@ -94,11 +99,15 @@ public class ModelInferenceManager {
                 if (files != null && files.length > 0) {
                     // Heuristic: ensure this root path matches the missionKey
                     if (r.endsWith("/" + missionKey) || r.endsWith("/hr") || r.endsWith("/spo2")) {
+                        logDebug("Mission root candidate success: " + r + " (" + files.length + " entries)");
                         return r;
                     }
+                } else {
+                    logDebug("Mission root candidate empty: " + r);
                 }
             } catch (IOException ignored) {}
         }
+        logDebug("Mission root not found for key: " + missionKey);
         return null;
     }
 
@@ -115,18 +124,25 @@ public class ModelInferenceManager {
     private void loadMission(Mission mission, String missionRoot) {
         if (missionRoot == null) {
             Log.w(TAG, "Mission root not found: " + mission);
+            logDebug("Mission root not found for " + mission);
             return;
         }
         try {
             String[] subDirs = appContext.getAssets().list(missionRoot);
-            if (subDirs == null) return;
+            if (subDirs == null) {
+                logDebug("Mission root has no subdirs: " + missionRoot);
+                return;
+            }
 
             // Each Fold-X contains a json and a pt file
             List<Module> modules = new ArrayList<>();
             for (String sub : subDirs) {
                 String foldDir = missionRoot + "/" + sub;
                 String[] foldFiles = appContext.getAssets().list(foldDir);
-                if (foldFiles == null) continue;
+                if (foldFiles == null) {
+                    logDebug("Fold directory empty: " + foldDir);
+                    continue;
+                }
 
                 String jsonPath = null;
                 String ptPath = null;
@@ -160,6 +176,8 @@ public class ModelInferenceManager {
                 missionModules.put(mission, modules);
                 Log.i(TAG, "Mission " + mission + " folds loaded: " + modules.size());
                 logDebug("Mission " + mission + " folds loaded: " + modules.size());
+            } else {
+                logDebug("Mission " + mission + " loaded 0 modules");
             }
         } catch (IOException e) {
             Log.e(TAG, "Error loading mission: " + mission, e);
@@ -324,6 +342,25 @@ public class ModelInferenceManager {
     private void logDebug(String message) {
         if (listener != null) {
             listener.onDebugLog(message);
+        }
+    }
+
+    private void logAssetListing(String path, String label) {
+        try {
+            String[] entries = appContext.getAssets().list(path);
+            if (entries == null) {
+                logDebug("Assets list null for " + label + " (" + path + ")");
+                return;
+            }
+            StringBuilder sb = new StringBuilder();
+            sb.append("Assets[" + label + "]=");
+            for (int i = 0; i < entries.length; i++) {
+                if (i > 0) sb.append(", ");
+                sb.append(entries[i]);
+            }
+            logDebug(sb.toString());
+        } catch (IOException e) {
+            logDebug("Assets list error for " + label + ": " + e.getMessage());
         }
     }
 }
