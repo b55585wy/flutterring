@@ -26,6 +26,7 @@ public class ModelInferenceManager {
         void onBpSysPredicted(int mmHg);
         void onBpDiaPredicted(int mmHg);
         void onSpo2Predicted(int percent);
+        default void onDebugLog(String message) {}
     }
 
     private static final String TAG = "ModelInference";
@@ -38,6 +39,7 @@ public class ModelInferenceManager {
 
     private final int sampleRateHz = 25;
     private int windowSeconds = 5;
+    private int targetFs = 100;
 
     private final ArrayDeque<Float> greenBuf = new ArrayDeque<>();
     private final ArrayDeque<Float> irBuf = new ArrayDeque<>();
@@ -54,16 +56,27 @@ public class ModelInferenceManager {
         loadMission(Mission.BP_DIA, findFirstMissionRoot("BP_dia"));
         loadMission(Mission.SPO2, findFirstMissionRoot("spo2"));
 
-        // Infer windowSeconds from first available config
+        inferWindowAndTargetFs();
+        logDebug("Initialized. WindowSeconds=" + windowSeconds + ", targetFs=" + targetFs);
+    }
+
+    private void inferWindowAndTargetFs() {
         for (JsonNode cfg : missionConfigs.values()) {
-            if (cfg != null && cfg.has("window_seconds")) {
-                try {
-                    windowSeconds = Math.max(1, cfg.get("window_seconds").asInt());
-                    break;
-                } catch (Exception ignored) {}
+            if (cfg == null) continue;
+            JsonNode dataset = cfg.get("dataset");
+            if (dataset != null) {
+                if (dataset.has("window_duration")) {
+                    try {
+                        windowSeconds = Math.max(5, dataset.get("window_duration").asInt());
+                    } catch (Exception ignored) {}
+                }
+                if (dataset.has("target_fs")) {
+                    try {
+                        targetFs = Math.max(sampleRateHz, dataset.get("target_fs").asInt());
+                    } catch (Exception ignored) {}
+                }
             }
         }
-        Log.i(TAG, "Initialized. WindowSeconds=" + windowSeconds);
     }
 
     private String findFirstMissionRoot(String missionKey) {
@@ -128,6 +141,7 @@ public class ModelInferenceManager {
                             missionConfigs.put(mission, mapper.readTree(is));
                         } catch (Exception e) {
                             Log.w(TAG, "Failed reading config: " + jsonPath, e);
+                            logDebug("Failed reading config: " + jsonPath + " - " + e.getMessage());
                         }
                     }
                     try {
@@ -135,17 +149,21 @@ public class ModelInferenceManager {
                         Module m = Module.load(localPath);
                         modules.add(m);
                         Log.i(TAG, "Loaded module: " + ptPath);
+                        logDebug("Loaded module: " + ptPath);
                     } catch (Throwable t) {
                         Log.w(TAG, "Skip module (load failed): " + ptPath, t);
+                        logDebug("Model load failed for " + ptPath + ": " + t.getMessage());
                     }
                 }
             }
             if (!modules.isEmpty()) {
                 missionModules.put(mission, modules);
                 Log.i(TAG, "Mission " + mission + " folds loaded: " + modules.size());
+                logDebug("Mission " + mission + " folds loaded: " + modules.size());
             }
         } catch (IOException e) {
             Log.e(TAG, "Error loading mission: " + mission, e);
+            logDebug("Error loading mission " + mission + ": " + e.getMessage());
         }
     }
 
@@ -164,17 +182,29 @@ public class ModelInferenceManager {
 
     private void runAllMissions() {
         // Prepare input tensor [1, T, C] with C=2 (green, ir)
-        int T = greenBuf.size();
-        float[] input = new float[T * 2];
-        int i = 0;
-        for (Float v : greenBuf) { input[i * 2] = v; i++; }
-        i = 0;
-        for (Float v : irBuf) { input[i * 2 + 1] = v; i++; }
+        int targetLength = windowSeconds * targetFs;
+        if (targetLength <= 0) {
+            logDebug("Target length invalid: " + targetLength);
+            return;
+        }
+
+        float[] resampledGreen = resampleBuffer(greenBuf, targetLength);
+        float[] resampledIr = resampleBuffer(irBuf, targetLength);
+        if (resampledGreen == null || resampledIr == null) {
+            logDebug("Resample failed due to insufficient data");
+            return;
+        }
+
+        float[] input = new float[targetLength * 2];
+        for (int i = 0; i < targetLength; i++) {
+            input[i * 2] = resampledGreen[i];
+            input[i * 2 + 1] = resampledIr[i];
+        }
 
         // normalize per-channel (zero mean, unit var) for numerical stability
-        normalizeInPlace(input, 2, T);
+        normalizeInPlace(input, 2, targetLength);
 
-        long[] shape = new long[]{1, T, 2};
+        long[] shape = new long[]{1, targetLength, 2};
         Tensor tensor = Tensor.fromBlob(input, shape);
 
         // HR
@@ -183,6 +213,7 @@ public class ModelInferenceManager {
             if (listener != null && !Float.isNaN(pred) && pred > 0) {
                 listener.onHrPredicted(Math.round(pred));
             }
+            if (Float.isNaN(pred)) logDebug("HR prediction NaN");
         }
         // BP SYS
         if (hasMission(Mission.BP_SYS)) {
@@ -190,6 +221,7 @@ public class ModelInferenceManager {
             if (listener != null && !Float.isNaN(pred) && pred > 0) {
                 listener.onBpSysPredicted(Math.round(pred));
             }
+            if (Float.isNaN(pred)) logDebug("BP_SYS prediction NaN");
         }
         // BP DIA
         if (hasMission(Mission.BP_DIA)) {
@@ -197,6 +229,7 @@ public class ModelInferenceManager {
             if (listener != null && !Float.isNaN(pred) && pred > 0) {
                 listener.onBpDiaPredicted(Math.round(pred));
             }
+            if (Float.isNaN(pred)) logDebug("BP_DIA prediction NaN");
         }
         // SpO2
         if (hasMission(Mission.SPO2)) {
@@ -205,6 +238,7 @@ public class ModelInferenceManager {
                 int val = Math.max(70, Math.min(100, Math.round(pred)));
                 listener.onSpo2Predicted(val);
             }
+            if (Float.isNaN(pred)) logDebug("SpO2 prediction NaN");
         }
     }
 
@@ -226,11 +260,42 @@ public class ModelInferenceManager {
                     sum += arr[arr.length - 1]; // support either scalar or last-step output
                     n++;
                 }
+                if (arr.length == 0) logDebug("Empty output tensor from module");
             } catch (Throwable e) {
                 Log.w(TAG, "Forward failed on one fold", e);
+                 logDebug("Forward failed: " + e.getMessage());
             }
         }
         return n > 0 ? sum / n : Float.NaN;
+    }
+
+    private float[] resampleBuffer(ArrayDeque<Float> buffer, int targetLength) {
+        int srcSize = buffer.size();
+        if (srcSize < 2 || targetLength < 2) {
+            return null;
+        }
+        float[] src = new float[srcSize];
+        int idx = 0;
+        for (Float v : buffer) {
+            src[idx++] = v;
+        }
+
+        float[] out = new float[targetLength];
+        float ratio = (float) sampleRateHz / targetFs;
+        for (int i = 0; i < targetLength; i++) {
+            float srcPos = i * ratio;
+            int idx0 = (int) Math.floor(srcPos);
+            int idx1 = Math.min(srcSize - 1, idx0 + 1);
+            float frac = srcPos - idx0;
+            if (idx0 >= srcSize) {
+                out[i] = src[srcSize - 1];
+            } else {
+                float v0 = src[idx0];
+                float v1 = src[idx1];
+                out[i] = v0 + (v1 - v0) * frac;
+            }
+        }
+        return out;
     }
 
     private void normalizeInPlace(float[] data, int channels, int T) {
@@ -250,6 +315,12 @@ public class ModelInferenceManager {
             for (int t = 0; t < T; t++) {
                 data[t * channels + c] = (float) ((data[t * channels + c] - mean) / std);
             }
+        }
+    }
+
+    private void logDebug(String message) {
+        if (listener != null) {
+            listener.onDebugLog(message);
         }
     }
 }

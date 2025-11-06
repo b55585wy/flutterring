@@ -612,6 +612,11 @@ public class MainActivity extends AppCompatActivity implements IResponseListener
                     recordLog("[Model] SpO2: " + percent + "%");
                 });
             }
+
+            @Override
+            public void onDebugLog(String message) {
+                recordLog("[Model] " + message);
+            }
         });
         modelInferenceManager.init();
         NotificationHandler.setInferenceManager(modelInferenceManager);
