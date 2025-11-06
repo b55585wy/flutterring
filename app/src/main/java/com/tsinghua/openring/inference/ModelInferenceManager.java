@@ -68,11 +68,12 @@ public class ModelInferenceManager {
 
     private String findFirstMissionRoot(String missionKey) {
         // Known roots under assets (mapped from app/models): try common patterns
+        // Assets are packaged with 'models' as a source root, but the AssetManager paths are root-relative.
         String[] roots = new String[] {
-                "models/transformer-ring1-hr-all-ir/hr",
-                "models/transformer-ring1-hr-all-irred/hr",
-                "models/transformer-ring1-bp-all-irred/" + missionKey,
-                "models/transformer-ring1-spo2-all-irred/spo2"
+                "transformer-ring1-hr-all-ir/hr",
+                "transformer-ring1-hr-all-irred/hr",
+                "transformer-ring1-bp-all-irred/" + missionKey,
+                "transformer-ring1-spo2-all-irred/spo2"
         };
         for (String r : roots) {
             try {
@@ -86,6 +87,16 @@ public class ModelInferenceManager {
             } catch (IOException ignored) {}
         }
         return null;
+    }
+
+    public String reportStatus() {
+        StringBuilder sb = new StringBuilder();
+        for (Mission m : Mission.values()) {
+            List<Module> list = missionModules.get(m);
+            int n = (list == null) ? 0 : list.size();
+            sb.append("[Model] ").append(m.name()).append(": folds=").append(n).append('\n');
+        }
+        return sb.toString();
     }
 
     private void loadMission(Mission mission, String missionRoot) {

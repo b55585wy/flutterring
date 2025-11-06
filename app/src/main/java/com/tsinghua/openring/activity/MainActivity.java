@@ -615,6 +615,13 @@ public class MainActivity extends AppCompatActivity implements IResponseListener
         });
         modelInferenceManager.init();
         NotificationHandler.setInferenceManager(modelInferenceManager);
+        // Log model loading status to UI logs
+        try {
+            String status = modelInferenceManager.reportStatus();
+            for (String line : status.split("\n")) {
+                if (!line.trim().isEmpty()) recordLog(line);
+            }
+        } catch (Exception ignored) {}
         
         recordLog("Vital Signs Processor initialized");
     }
