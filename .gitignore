@@ -15,11 +15,35 @@
 .externalNativeBuild
 .cxx
 local.properties
- 
-# Model weights and large artifacts - do not track
-app/models/**/*.pt
-app/models/**/*.pth
-app/models/**/*.onnx
-app/models/**/*.tflite
-app/models/**/*.bin
-app/models/**/*.safetensors
+
+# macOS 系统文件
+**/.DS_Store
+
+# Gradle 缓存
+.gradle/
+build/
+
+# Android Studio
+*.iml
+.idea/
+
+# Python 虚拟环境
+venv/
+venv_*/
+env/
+ENV/
+*.pyc
+__pycache__/
+
+# 日志文件
+logs/
+*.log
+
+# 可选：如果模型文件太大不想提交到 Git，可以取消注释以下行
+# 但这会导致其他人克隆项目后需要手动添加模型文件
+# app/models/**/*.pt
+# app/models/**/*.pth
+# app/models/**/*.onnx
+# app/models/**/*.tflite
+# app/models/**/*.bin
+# app/models/**/*.safetensors

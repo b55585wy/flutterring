@@ -55,13 +55,6 @@ public class ModelInferenceManager {
     private static final long INFERENCE_INTERVAL_MS = 2000; // 2秒
     private long lastInferenceTimeMs = 0;
     
-    // 平滑滤波器：存储最近N次预测结果
-    private static final int SMOOTHING_WINDOW_SIZE = 5; // 使用最近5次结果
-    private final ArrayDeque<Integer> hrHistory = new ArrayDeque<>();
-    private final ArrayDeque<Integer> bpSysHistory = new ArrayDeque<>();
-    private final ArrayDeque<Integer> bpDiaHistory = new ArrayDeque<>();
-    private final ArrayDeque<Integer> spo2History = new ArrayDeque<>();
-    
     // 文件日志相关
     private static BufferedWriter fileLogWriter = null;
     private static File logFile = null;
@@ -435,8 +428,7 @@ public class ModelInferenceManager {
     private void runAllMissions() {
         long startTime = System.currentTimeMillis();
         
-        // Prepare input tensor [1, T, C] with C=2 (green, ir)
-        // Model expects (batch, length, channels) format as per training
+        // Prepare input tensor [1, C, T] with C=2 (green, ir)
         int targetLength = windowSeconds * targetFs;
         if (targetLength <= 0) {
             logDebug("Target length invalid: " + targetLength);
@@ -450,57 +442,29 @@ public class ModelInferenceManager {
             return;
         }
 
-        // Interleave channels: [t0_green, t0_ir, t1_green, t1_ir, ...]
-        // to match (batch=1, length=T, channels=2) layout
         float[] input = new float[targetLength * 2];
         for (int i = 0; i < targetLength; i++) {
-            input[i * 2] = resampledGreen[i];     // time step i, channel 0 (green)
-            input[i * 2 + 1] = resampledIr[i];    // time step i, channel 1 (ir)
+            input[i] = resampledGreen[i]; // channel 0
+            input[targetLength + i] = resampledIr[i]; // channel 1
         }
 
         // normalize per-channel (zero mean, unit var) for numerical stability
         normalizeInPlace(input, targetLength);
 
-        long[] shape = new long[]{1, targetLength, 2};
+        long[] shape = new long[]{1, 2, targetLength};
         Tensor tensor = Tensor.fromBlob(input, shape);
         
         long prepTime = System.currentTimeMillis() - startTime;
         logDebug("Inference started: targetLength=" + targetLength + ", prep=" + prepTime + "ms");
 
-        // HR - uses single channel (IR only)
+        // HR
         long hrStart = System.currentTimeMillis();
         if (hasMission(Mission.HR)) {
-            // Extract IR channel only for HR model: [1, T, 1]
-            float[] hrInput = new float[targetLength];
-            for (int i = 0; i < targetLength; i++) {
-                hrInput[i] = input[i * 2 + 1];  // Extract IR channel (index 1)
-            }
-            // Normalize single channel
-            double mean = 0;
-            for (int i = 0; i < targetLength; i++) {
-                mean += hrInput[i];
-            }
-            mean /= targetLength;
-            double var = 0;
-            for (int i = 0; i < targetLength; i++) {
-                double v = hrInput[i] - mean;
-                var += v * v;
-            }
-            double std = Math.sqrt(var / Math.max(1, targetLength - 1));
-            if (std < 1e-6) std = 1.0;
-            for (int i = 0; i < targetLength; i++) {
-                hrInput[i] = (float) ((hrInput[i] - mean) / std);
-            }
-            
-            long[] hrShape = new long[]{1, targetLength, 1};
-            Tensor hrTensor = Tensor.fromBlob(hrInput, hrShape);
-            float pred = averagePrediction(missionModules.get(Mission.HR), hrTensor);
+            float pred = averagePrediction(missionModules.get(Mission.HR), tensor);
             long hrTime = System.currentTimeMillis() - hrStart;
             if (listener != null && !Float.isNaN(pred) && pred > 0) {
-                int rawValue = Math.round(pred);
-                int smoothedValue = smoothValue(hrHistory, rawValue);
-                listener.onHrPredicted(smoothedValue);
-                logDebug("HR=" + smoothedValue + " bpm (raw=" + rawValue + ", " + hrTime + "ms)");
+                listener.onHrPredicted(Math.round(pred));
+                logDebug("HR=" + Math.round(pred) + " bpm (" + hrTime + "ms)");
             }
             if (Float.isNaN(pred)) logDebug("HR prediction NaN (" + hrTime + "ms)");
         }
@@ -511,10 +475,8 @@ public class ModelInferenceManager {
             float pred = averagePrediction(missionModules.get(Mission.BP_SYS), tensor);
             long bpSysTime = System.currentTimeMillis() - bpSysStart;
             if (listener != null && !Float.isNaN(pred) && pred > 0) {
-                int rawValue = Math.round(pred);
-                int smoothedValue = smoothValue(bpSysHistory, rawValue);
-                listener.onBpSysPredicted(smoothedValue);
-                logDebug("BP_SYS=" + smoothedValue + " mmHg (raw=" + rawValue + ", " + bpSysTime + "ms)");
+                listener.onBpSysPredicted(Math.round(pred));
+                logDebug("BP_SYS=" + Math.round(pred) + " mmHg (" + bpSysTime + "ms)");
             }
             if (Float.isNaN(pred)) logDebug("BP_SYS prediction NaN (" + bpSysTime + "ms)");
         }
@@ -525,10 +487,8 @@ public class ModelInferenceManager {
             float pred = averagePrediction(missionModules.get(Mission.BP_DIA), tensor);
             long bpDiaTime = System.currentTimeMillis() - bpDiaStart;
             if (listener != null && !Float.isNaN(pred) && pred > 0) {
-                int rawValue = Math.round(pred);
-                int smoothedValue = smoothValue(bpDiaHistory, rawValue);
-                listener.onBpDiaPredicted(smoothedValue);
-                logDebug("BP_DIA=" + smoothedValue + " mmHg (raw=" + rawValue + ", " + bpDiaTime + "ms)");
+                listener.onBpDiaPredicted(Math.round(pred));
+                logDebug("BP_DIA=" + Math.round(pred) + " mmHg (" + bpDiaTime + "ms)");
             }
             if (Float.isNaN(pred)) logDebug("BP_DIA prediction NaN (" + bpDiaTime + "ms)");
         }
@@ -539,10 +499,9 @@ public class ModelInferenceManager {
             float pred = averagePrediction(missionModules.get(Mission.SPO2), tensor);
             long spo2Time = System.currentTimeMillis() - spo2Start;
             if (listener != null && !Float.isNaN(pred) && pred > 0) {
-                int rawValue = Math.max(70, Math.min(100, Math.round(pred)));
-                int smoothedValue = smoothValue(spo2History, rawValue);
-                listener.onSpo2Predicted(smoothedValue);
-                logDebug("SPO2=" + smoothedValue + "% (raw=" + rawValue + ", " + spo2Time + "ms)");
+                int val = Math.max(70, Math.min(100, Math.round(pred)));
+                listener.onSpo2Predicted(val);
+                logDebug("SPO2=" + val + "% (" + spo2Time + "ms)");
             }
             if (Float.isNaN(pred)) logDebug("SpO2 prediction NaN (" + spo2Time + "ms)");
         }
@@ -609,54 +568,26 @@ public class ModelInferenceManager {
 
     private void normalizeInPlace(float[] data, int lengthPerChannel) {
         int channels = 2;
-        // Data is interleaved: [t0_c0, t0_c1, t1_c0, t1_c1, ...]
-        // Normalize each channel separately
         for (int c = 0; c < channels; c++) {
-            // Calculate mean for channel c
+            int offset = c * lengthPerChannel;
             double mean = 0;
             for (int t = 0; t < lengthPerChannel; t++) {
-                mean += data[t * channels + c];
+                mean += data[offset + t];
             }
             mean /= lengthPerChannel;
-            
-            // Calculate variance for channel c
             double var = 0;
             for (int t = 0; t < lengthPerChannel; t++) {
-                double v = data[t * channels + c] - mean;
+                double v = data[offset + t] - mean;
                 var += v * v;
             }
             double std = Math.sqrt(var / Math.max(1, lengthPerChannel - 1));
             if (std < 1e-6) std = 1.0;
-            
-            // Normalize channel c
             for (int t = 0; t < lengthPerChannel; t++) {
-                int idx = t * channels + c;
-                data[idx] = (float) ((data[idx] - mean) / std);
+                data[offset + t] = (float) ((data[offset + t] - mean) / std);
             }
         }
     }
 
-    /**
-     * 平滑滤波：计算历史值的移动平均
-     */
-    private int smoothValue(ArrayDeque<Integer> history, int newValue) {
-        history.addLast(newValue);
-        while (history.size() > SMOOTHING_WINDOW_SIZE) {
-            history.removeFirst();
-        }
-        
-        // 计算移动平均（加权：最近的值权重更高）
-        int sum = 0;
-        int weightSum = 0;
-        int weight = 1;
-        for (Integer value : history) {
-            sum += value * weight;
-            weightSum += weight;
-            weight++; // 线性增加权重，最新值权重最大
-        }
-        return Math.round((float) sum / weightSum);
-    }
-    
     private void logDebug(String message) {
         // 输出到Logcat
         Log.d(TAG, message);

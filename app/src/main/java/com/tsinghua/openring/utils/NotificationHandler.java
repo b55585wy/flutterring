@@ -1063,6 +1063,11 @@ public class NotificationHandler {
             if (inferenceManager != null) {
                 long ts = System.currentTimeMillis();
                 inferenceManager.onSensorData(green, red, ir, accX, accY, accZ, ts);
+            } else {
+                // 调试：如果inferenceManager为null，记录警告（但不要每次都记录，避免日志过多）
+                if (System.currentTimeMillis() % 5000 < 100) { // 每5秒记录一次
+                    Log.w(TAG, "InferenceManager is null! Data not being processed.");
+                }
             }
 
             Log.v(TAG, String.format("Realtime point: G:%d, R:%d, IR:%d, AccX:%d, AccY:%d, AccZ:%d, GyroX:%d, GyroY:%d, GyroZ:%d, T0:%d, T1:%d, T2:%d",

@@ -626,6 +626,12 @@ public class MainActivity extends AppCompatActivity implements IResponseListener
             for (String line : status.split("\n")) {
                 if (!line.trim().isEmpty()) recordLog(line);
             }
+            // 显示日志文件路径
+            String logPath = ModelInferenceManager.getLogFilePath();
+            if (logPath != null) {
+                recordLog("Model Inference日志文件: " + logPath);
+                recordLog("使用命令拉取日志: adb pull " + logPath + " ./");
+            }
         } catch (Exception ignored) {}
         
         recordLog("Vital Signs Processor initialized");
@@ -2546,6 +2552,8 @@ public class MainActivity extends AppCompatActivity implements IResponseListener
 
     @Override
     protected void onDestroy() {
+        // 关闭模型推理日志文件
+        ModelInferenceManager.closeFileLogging();
         super.onDestroy();
 
         // Clean up resources
