@@ -135,6 +135,7 @@ public class MainActivity extends AppCompatActivity implements IResponseListener
     // Vital Signs Processor
     private VitalSignsProcessor vitalSignsProcessor;
     private ModelInferenceManager modelInferenceManager;
+    private VitalSignsProcessor.SignalQuality currentSignalQuality = VitalSignsProcessor.SignalQuality.NO_SIGNAL;
 
     // File Operation Related
     private List<FileInfo> fileList = new ArrayList<>();
@@ -566,6 +567,9 @@ public class MainActivity extends AppCompatActivity implements IResponseListener
             @Override
             public void onSignalQualityUpdate(VitalSignsProcessor.SignalQuality quality) {
                 mainHandler.post(() -> {
+                    // 保存当前信号质量状态
+                    currentSignalQuality = quality;
+                    
                     if (signalQualityIndicator != null) {
                         signalQualityIndicator.setText(quality.getDisplayName());
                         signalQualityIndicator.setTextColor(Color.parseColor(quality.getColor()));
@@ -595,43 +599,66 @@ public class MainActivity extends AppCompatActivity implements IResponseListener
             @Override
             public void onHrPredicted(int bpm) {
                 mainHandler.post(() -> {
-                    if (heartRateValue != null) {
+                    // 只在信号质量良好时更新显示
+                    if (isSignalQualityGood() && heartRateValue != null) {
                         heartRateValue.setText(String.valueOf(bpm));
+                        updateLastUpdateTime();
+                        recordLog("[Model] HR: " + bpm + " BPM");
+                    } else {
+                        recordLog("[Model] HR: " + bpm + " BPM (not displayed - signal quality poor)");
                     }
-                    updateLastUpdateTime();
-                    recordLog("[Model] HR: " + bpm + " BPM");
                 });
             }
 
             @Override
             public void onBpSysPredicted(int mmHg) {
                 mainHandler.post(() -> {
-                    if (bpSysValue != null) bpSysValue.setText(String.valueOf(mmHg));
-                    recordLog("[Model] BP_SYS: " + mmHg + " mmHg");
+                    // 只在信号质量良好时更新显示
+                    if (isSignalQualityGood() && bpSysValue != null) {
+                        bpSysValue.setText(String.valueOf(mmHg));
+                        recordLog("[Model] BP_SYS: " + mmHg + " mmHg");
+                    } else {
+                        recordLog("[Model] BP_SYS: " + mmHg + " mmHg (not displayed - signal quality poor)");
+                    }
                 });
             }
 
             @Override
             public void onBpDiaPredicted(int mmHg) {
                 mainHandler.post(() -> {
-                    if (bpDiaValue != null) bpDiaValue.setText(String.valueOf(mmHg));
-                    recordLog("[Model] BP_DIA: " + mmHg + " mmHg");
+                    // 只在信号质量良好时更新显示
+                    if (isSignalQualityGood() && bpDiaValue != null) {
+                        bpDiaValue.setText(String.valueOf(mmHg));
+                        recordLog("[Model] BP_DIA: " + mmHg + " mmHg");
+                    } else {
+                        recordLog("[Model] BP_DIA: " + mmHg + " mmHg (not displayed - signal quality poor)");
+                    }
                 });
             }
 
             @Override
             public void onSpo2Predicted(int percent) {
                 mainHandler.post(() -> {
-                    if (spo2Value != null) spo2Value.setText(String.valueOf(percent));
-                    recordLog("[Model] SpO2: " + percent + "%");
+                    // 只在信号质量良好时更新显示
+                    if (isSignalQualityGood() && spo2Value != null) {
+                        spo2Value.setText(String.valueOf(percent));
+                        recordLog("[Model] SpO2: " + percent + "%");
+                    } else {
+                        recordLog("[Model] SpO2: " + percent + "% (not displayed - signal quality poor)");
+                    }
                 });
             }
             
             @Override
             public void onRrPredicted(int brpm) {
                 mainHandler.post(() -> {
-                    if (rrValue != null) rrValue.setText(String.valueOf(brpm));
-                    recordLog("[Model] RR: " + brpm + " brpm");
+                    // 只在信号质量良好时更新显示
+                    if (isSignalQualityGood() && rrValue != null) {
+                        rrValue.setText(String.valueOf(brpm));
+                        recordLog("[Model] RR: " + brpm + " brpm");
+                    } else {
+                        recordLog("[Model] RR: " + brpm + " brpm (not displayed - signal quality poor)");
+                    }
                 });
             }
 
@@ -2570,6 +2597,15 @@ public class MainActivity extends AppCompatActivity implements IResponseListener
     @Override
     public void appRefresh(SystemControlBean systemControlBean) {
         // App refresh
+    }
+
+    /**
+     * 检查当前信号质量是否良好（可以显示生理指标）
+     * @return true 如果信号质量为 EXCELLENT、GOOD 或 FAIR
+     */
+    private boolean isSignalQualityGood() {
+        return currentSignalQuality != VitalSignsProcessor.SignalQuality.POOR &&
+               currentSignalQuality != VitalSignsProcessor.SignalQuality.NO_SIGNAL;
     }
 
     @Override
