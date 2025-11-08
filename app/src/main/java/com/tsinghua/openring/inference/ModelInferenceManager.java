@@ -47,7 +47,8 @@ public class ModelInferenceManager {
 
     private final int sampleRateHz = 25;
     private int windowSeconds = 5;  // HR/BP/SpO2 使用 5 秒窗口
-    private int windowSecondsRR = 15;  // RR 使用 15 秒窗口（呼吸周期更长，若配置覆盖则自动调整）
+    private static final int RR_WINDOW_SECONDS_OVERRIDE = 15;
+    private int windowSecondsRR = RR_WINDOW_SECONDS_OVERRIDE;  // 默认 15 秒窗口，可根据需求覆盖
     private int targetFs = 100;
 
     private final ArrayDeque<Float> greenBuf = new ArrayDeque<>();
@@ -221,12 +222,8 @@ public class ModelInferenceManager {
             if (dataset == null) continue;
 
             if (mission == Mission.RR) {
-                if (dataset.has("window_duration")) {
-                    try {
-                        int w = dataset.get("window_duration").asInt();
-                        windowSecondsRR = Math.max(10, w); // 至少保持 10 秒，确保足够周期
-                    } catch (Exception ignored) {}
-                }
+                // 即便配置文件为 30s，这里固定使用 15s，兼顾响应速度与周期覆盖
+                windowSecondsRR = RR_WINDOW_SECONDS_OVERRIDE;
             } else {
                 if (dataset.has("window_duration")) {
                     try {
@@ -243,7 +240,7 @@ public class ModelInferenceManager {
                 } catch (Exception ignored) {}
             }
         }
-        logDebug("Window seconds (HR/BP/SpO2)=" + windowSeconds + ", RR=" + windowSecondsRR + ", targetFs=" + targetFs);
+        logDebug("Window seconds (HR/BP/SpO2)=" + windowSeconds + ", RR=" + windowSecondsRR + " (override), targetFs=" + targetFs);
     }
 
     private String findFirstMissionRoot(String missionKey) {
