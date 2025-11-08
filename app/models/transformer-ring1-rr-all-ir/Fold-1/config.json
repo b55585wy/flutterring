@@ -5,7 +5,7 @@
   "input_channels": 1,
   "input_type": ["ir"],
   "target_fs": 100,
-  "window_duration": 10,
+  "window_duration": 30,
   "model_params": {
     "in_channels": 1,
     "window_size": 5,

@@ -44,18 +44,22 @@ public class ModelInferenceManager {
 
     private final Map<Mission, List<Module>> missionModules = new HashMap<>();
     private final Map<Mission, JsonNode> missionConfigs = new HashMap<>();
-    private final Map<Mission, Integer> missionWindowSeconds = new HashMap<>();  // 每个 Mission 的窗口大小
 
     private final int sampleRateHz = 25;
-    private int windowSeconds = 5;  // 默认窗口大小（用于通用缓冲）
+    private int windowSeconds = 5;  // HR/BP/SpO2 使用 5 秒窗口
+    private int windowSecondsRR = 15;  // RR 使用 15 秒窗口（呼吸周期更长）
     private int targetFs = 100;
 
     private final ArrayDeque<Float> greenBuf = new ArrayDeque<>();
     private final ArrayDeque<Float> irBuf = new ArrayDeque<>();
+    // RR 专用缓冲区（需要更长的数据窗口）
+    private final ArrayDeque<Float> irBufRR = new ArrayDeque<>();
     
     // 推理间隔控制：每2秒推理一次，避免过于频繁
-    private static final long INFERENCE_INTERVAL_MS = 2000; // 2秒
+    private static final long INFERENCE_INTERVAL_MS = 2000; // 2秒 (HR/BP/SpO2)
+    private static final long INFERENCE_INTERVAL_MS_RR = 5000; // 5秒 (RR)
     private long lastInferenceTimeMs = 0;
+    private long lastInferenceTimeMsRR = 0;
     
     // 平滑滤波器：存储最近N次预测结果
     private static final int SMOOTHING_WINDOW_SIZE = 5; // 使用最近5次结果
@@ -362,19 +366,8 @@ public class ModelInferenceManager {
                     if (!missionConfigs.containsKey(mission)) {
                         logDebug("Loading config from: " + jsonPath);
                         try (InputStream is = appContext.getAssets().open(jsonPath)) {
-                            JsonNode config = mapper.readTree(is);
-                            missionConfigs.put(mission, config);
-                            
-                            // 提取每个 Mission 的窗口大小
-                            int missionWindow = 5;  // 默认 5 秒
-                            JsonNode dataset = config.get("dataset");
-                            if (dataset != null && dataset.has("window_duration")) {
-                                missionWindow = dataset.get("window_duration").asInt(5);
-                            } else if (config.has("window_duration")) {
-                                missionWindow = config.get("window_duration").asInt(5);
-                            }
-                            missionWindowSeconds.put(mission, missionWindow);
-                            logDebug("Config loaded successfully for " + mission + ", window=" + missionWindow + "s");
+                            missionConfigs.put(mission, mapper.readTree(is));
+                            logDebug("Config loaded successfully for " + mission);
                         } catch (Exception e) {
                             Log.w(TAG, "Failed reading config: " + jsonPath, e);
                             logDebug("Failed reading config: " + jsonPath + " - " + e.getMessage());
@@ -382,8 +375,6 @@ public class ModelInferenceManager {
                             if (e.getCause() != null) {
                                 logDebug("Cause: " + e.getCause().getMessage());
                             }
-                            // 使用默认窗口大小
-                            missionWindowSeconds.put(mission, 5);
                         }
                     } else {
                         logDebug("Config already loaded for " + mission + ", skipping");
@@ -429,176 +420,219 @@ public class ModelInferenceManager {
     }
 
     public void onSensorData(long green, long red, long ir, short accX, short accY, short accZ, long timestampMs) {
-        // Buffer only what we need (green, ir)
+        // Buffer for HR/BP/SpO2 (5 seconds)
         greenBuf.addLast((float) green);
         irBuf.addLast((float) ir);
-        
-        // 使用所有 Mission 中最大的窗口大小作为缓冲区大小
-        int maxWindowSeconds = windowSeconds;  // 默认 5 秒
-        for (int w : missionWindowSeconds.values()) {
-            maxWindowSeconds = Math.max(maxWindowSeconds, w);
-        }
-        int maxSize = maxWindowSeconds * sampleRateHz;
-        
+        int maxSize = windowSeconds * sampleRateHz;
         while (greenBuf.size() > maxSize) greenBuf.removeFirst();
         while (irBuf.size() > maxSize) irBuf.removeFirst();
 
+        // Buffer for RR (15 seconds)
+        irBufRR.addLast((float) ir);
+        int maxSizeRR = windowSecondsRR * sampleRateHz;
+        while (irBufRR.size() > maxSizeRR) irBufRR.removeFirst();
+
         // 调试：每100个样本记录一次缓冲区状态
         if (greenBuf.size() % 100 == 0 && greenBuf.size() > 0) {
-            logDebug("Buffer: " + greenBuf.size() + "/" + maxSize + " samples");
+            logDebug("Buffer: HR/BP/SpO2=" + greenBuf.size() + "/" + maxSize + 
+                    ", RR=" + irBufRR.size() + "/" + maxSizeRR + " samples");
         }
 
-        // 只有当缓冲区满，且距离上次推理超过指定间隔时才运行
+        // HR/BP/SpO2 推理：5秒窗口，每2秒推理一次
         if (greenBuf.size() >= maxSize && irBuf.size() >= maxSize) {
             long currentTime = System.currentTimeMillis();
             if (currentTime - lastInferenceTimeMs >= INFERENCE_INTERVAL_MS) {
                 lastInferenceTimeMs = currentTime;
-                logDebug("Buffer full, starting inference. Missions: HR=" + hasMission(Mission.HR) + 
-                        ", BP_SYS=" + hasMission(Mission.BP_SYS) + ", BP_DIA=" + hasMission(Mission.BP_DIA) + 
-                        ", SPO2=" + hasMission(Mission.SPO2));
-                runAllMissions();
+                logDebug("HR/BP/SpO2 buffer full, starting inference.");
+                runHrBpSpo2Missions();
+            }
+        }
+        
+        // RR 推理：15秒窗口，每5秒推理一次
+        if (irBufRR.size() >= maxSizeRR) {
+            long currentTime = System.currentTimeMillis();
+            if (currentTime - lastInferenceTimeMsRR >= INFERENCE_INTERVAL_MS_RR) {
+                lastInferenceTimeMsRR = currentTime;
+                logDebug("RR buffer full, starting inference.");
+                runRRMission();
             }
         }
     }
 
-    private void runAllMissions() {
+    private void runHrBpSpo2Missions() {
         long startTime = System.currentTimeMillis();
-        logDebug("Starting inference for all missions");
-
-        // HR - 5s window, single channel (IR only)
-        runMission(Mission.HR, 1, true);  // 1 channel (IR), single channel mode
         
-        // BP SYS - 5s window, dual channel (Green + IR)
-        runMission(Mission.BP_SYS, 2, false);  // 2 channels
-        
-        // BP DIA - 5s window, dual channel (Green + IR)
-        runMission(Mission.BP_DIA, 2, false);  // 2 channels
-        
-        // SpO2 - 5s window, dual channel (Green + IR)
-        runMission(Mission.SPO2, 2, false);  // 2 channels
-        
-        // RR - 10s window, single channel (IR only)
-        runMission(Mission.RR, 1, true);  // 1 channel (IR), single channel mode
-        
-        long totalTime = System.currentTimeMillis() - startTime;
-        logDebug("Total inference time: " + totalTime + "ms");
-    }
-    
-    /**
-     * 为单个 Mission 准备输入并运行推理
-     * @param mission Mission 类型
-     * @param channels 通道数 (1=IR only, 2=Green+IR)
-     * @param irOnly 是否只使用 IR 通道
-     */
-    private void runMission(Mission mission, int channels, boolean irOnly) {
-        if (!hasMission(mission)) return;
-        
-        long missionStart = System.currentTimeMillis();
-        
-        // 获取该 Mission 的窗口大小
-        int missionWindow = missionWindowSeconds.getOrDefault(mission, 5);
-        int targetLength = missionWindow * targetFs;
-        
+        // Prepare input tensor [1, T, C] with C=2 (green, ir)
+        // Model expects (batch, length, channels) format as per training
+        int targetLength = windowSeconds * targetFs;
         if (targetLength <= 0) {
-            logDebug(mission + ": Invalid target length: " + targetLength);
+            logDebug("Target length invalid: " + targetLength);
             return;
         }
-        
-        // Resample buffers 根据窗口大小
-        float[] resampledGreen = irOnly ? null : resampleBuffer(greenBuf, targetLength);
+
+        float[] resampledGreen = resampleBuffer(greenBuf, targetLength);
         float[] resampledIr = resampleBuffer(irBuf, targetLength);
-        
-        if (resampledIr == null || (!irOnly && resampledGreen == null)) {
-            logDebug(mission + ": Resample failed");
+        if (resampledGreen == null || resampledIr == null) {
+            logDebug("Resample failed due to insufficient data");
             return;
         }
+
+        // Interleave channels: [t0_green, t0_ir, t1_green, t1_ir, ...]
+        // to match (batch=1, length=T, channels=2) layout
+        float[] input = new float[targetLength * 2];
+        for (int i = 0; i < targetLength; i++) {
+            input[i * 2] = resampledGreen[i];     // time step i, channel 0 (green)
+            input[i * 2 + 1] = resampledIr[i];    // time step i, channel 1 (ir)
+        }
+
+        // normalize per-channel (zero mean, unit var) for numerical stability
+        normalizeInPlace(input, targetLength);
+
+        long[] shape = new long[]{1, targetLength, 2};
+        Tensor tensor = Tensor.fromBlob(input, shape);
         
-        Tensor tensor;
-        if (irOnly) {
-            // Single channel (IR only): [1, T, 1]
-            float[] input = new float[targetLength];
-            System.arraycopy(resampledIr, 0, input, 0, targetLength);
-            
-            // Normalize
+        long prepTime = System.currentTimeMillis() - startTime;
+        logDebug("Inference started: targetLength=" + targetLength + ", prep=" + prepTime + "ms");
+
+        // HR - uses single channel (IR only)
+        long hrStart = System.currentTimeMillis();
+        if (hasMission(Mission.HR)) {
+            // Extract IR channel only for HR model: [1, T, 1]
+            float[] hrInput = new float[targetLength];
+            for (int i = 0; i < targetLength; i++) {
+                hrInput[i] = input[i * 2 + 1];  // Extract IR channel (index 1)
+            }
+            // Normalize single channel
             double mean = 0;
-            for (float v : input) mean += v;
+            for (int i = 0; i < targetLength; i++) {
+                mean += hrInput[i];
+            }
             mean /= targetLength;
-            
             double var = 0;
-            for (float v : input) {
-                double diff = v - mean;
-                var += diff * diff;
+            for (int i = 0; i < targetLength; i++) {
+                double v = hrInput[i] - mean;
+                var += v * v;
             }
             double std = Math.sqrt(var / Math.max(1, targetLength - 1));
             if (std < 1e-6) std = 1.0;
-            
             for (int i = 0; i < targetLength; i++) {
-                input[i] = (float) ((input[i] - mean) / std);
+                hrInput[i] = (float) ((hrInput[i] - mean) / std);
             }
             
-            tensor = Tensor.fromBlob(input, new long[]{1, targetLength, 1});
-        } else {
-            // Dual channel (Green + IR): [1, T, 2]
-            float[] input = new float[targetLength * 2];
-            for (int i = 0; i < targetLength; i++) {
-                input[i * 2] = resampledGreen[i];
-                input[i * 2 + 1] = resampledIr[i];
+            long[] hrShape = new long[]{1, targetLength, 1};
+            Tensor hrTensor = Tensor.fromBlob(hrInput, hrShape);
+            float pred = averagePrediction(missionModules.get(Mission.HR), hrTensor);
+            long hrTime = System.currentTimeMillis() - hrStart;
+            if (listener != null && !Float.isNaN(pred) && pred > 0) {
+                int rawValue = Math.round(pred);
+                int smoothedValue = smoothValue(hrHistory, rawValue);
+                listener.onHrPredicted(smoothedValue);
+                logDebug("HR=" + smoothedValue + " bpm (raw=" + rawValue + ", " + hrTime + "ms)");
             }
-            
-            // Normalize per-channel
-            normalizeInPlace(input, targetLength);
-            
-            tensor = Tensor.fromBlob(input, new long[]{1, targetLength, 2});
+            if (Float.isNaN(pred)) logDebug("HR prediction NaN (" + hrTime + "ms)");
         }
         
-        // Run inference
-        float pred = averagePrediction(missionModules.get(mission), tensor);
-        long missionTime = System.currentTimeMillis() - missionStart;
+        // BP SYS
+        long bpSysStart = System.currentTimeMillis();
+        if (hasMission(Mission.BP_SYS)) {
+            float pred = averagePrediction(missionModules.get(Mission.BP_SYS), tensor);
+            long bpSysTime = System.currentTimeMillis() - bpSysStart;
+            if (listener != null && !Float.isNaN(pred) && pred > 0) {
+                int rawValue = Math.round(pred);
+                int smoothedValue = smoothValue(bpSysHistory, rawValue);
+                listener.onBpSysPredicted(smoothedValue);
+                logDebug("BP_SYS=" + smoothedValue + " mmHg (raw=" + rawValue + ", " + bpSysTime + "ms)");
+            }
+            if (Float.isNaN(pred)) logDebug("BP_SYS prediction NaN (" + bpSysTime + "ms)");
+        }
         
-        // Process result
-        if (Float.isNaN(pred)) {
-            logDebug(mission + ": prediction NaN (" + missionTime + "ms)");
+        // BP DIA
+        long bpDiaStart = System.currentTimeMillis();
+        if (hasMission(Mission.BP_DIA)) {
+            float pred = averagePrediction(missionModules.get(Mission.BP_DIA), tensor);
+            long bpDiaTime = System.currentTimeMillis() - bpDiaStart;
+            if (listener != null && !Float.isNaN(pred) && pred > 0) {
+                int rawValue = Math.round(pred);
+                int smoothedValue = smoothValue(bpDiaHistory, rawValue);
+                listener.onBpDiaPredicted(smoothedValue);
+                logDebug("BP_DIA=" + smoothedValue + " mmHg (raw=" + rawValue + ", " + bpDiaTime + "ms)");
+            }
+            if (Float.isNaN(pred)) logDebug("BP_DIA prediction NaN (" + bpDiaTime + "ms)");
+        }
+        
+        // SpO2
+        long spo2Start = System.currentTimeMillis();
+        if (hasMission(Mission.SPO2)) {
+            float pred = averagePrediction(missionModules.get(Mission.SPO2), tensor);
+            long spo2Time = System.currentTimeMillis() - spo2Start;
+            if (listener != null && !Float.isNaN(pred) && pred > 0) {
+                int rawValue = Math.max(70, Math.min(100, Math.round(pred)));
+                int smoothedValue = smoothValue(spo2History, rawValue);
+                listener.onSpo2Predicted(smoothedValue);
+                logDebug("SPO2=" + smoothedValue + "% (raw=" + rawValue + ", " + spo2Time + "ms)");
+            }
+            if (Float.isNaN(pred)) logDebug("SpO2 prediction NaN (" + spo2Time + "ms)");
+        }
+        
+        long totalTime = System.currentTimeMillis() - startTime;
+        logDebug("HR/BP/SpO2 total inference time: " + totalTime + "ms");
+    }
+    
+    private void runRRMission() {
+        long startTime = System.currentTimeMillis();
+        
+        // Prepare input tensor for RR: [1, T, 1] with 15-second window
+        int targetLength = windowSecondsRR * targetFs;  // 15秒 × 100Hz = 1500 samples
+        if (targetLength <= 0) {
+            logDebug("RR target length invalid: " + targetLength);
             return;
         }
-        
-        if (pred <= 0) {
-            logDebug(mission + ": prediction <= 0 (" + pred + ")");
+
+        float[] resampledIr = resampleBuffer(irBufRR, targetLength);
+        if (resampledIr == null) {
+            logDebug("RR resample failed due to insufficient data");
             return;
         }
-        
-        // Apply mission-specific processing and notify listener
-        int rawValue = Math.round(pred);
-        int smoothedValue;
-        
-        switch (mission) {
-            case HR:
-                smoothedValue = smoothValue(hrHistory, rawValue);
-                if (listener != null) listener.onHrPredicted(smoothedValue);
-                logDebug("HR=" + smoothedValue + " bpm (raw=" + rawValue + ", window=" + missionWindow + "s, " + missionTime + "ms)");
-                break;
-            case BP_SYS:
-                smoothedValue = smoothValue(bpSysHistory, rawValue);
-                if (listener != null) listener.onBpSysPredicted(smoothedValue);
-                logDebug("BP_SYS=" + smoothedValue + " mmHg (raw=" + rawValue + ", window=" + missionWindow + "s, " + missionTime + "ms)");
-                break;
-            case BP_DIA:
-                smoothedValue = smoothValue(bpDiaHistory, rawValue);
-                if (listener != null) listener.onBpDiaPredicted(smoothedValue);
-                logDebug("BP_DIA=" + smoothedValue + " mmHg (raw=" + rawValue + ", window=" + missionWindow + "s, " + missionTime + "ms)");
-                break;
-            case SPO2:
-                rawValue = Math.max(70, Math.min(100, rawValue));
-                smoothedValue = smoothValue(spo2History, rawValue);
-                if (listener != null) listener.onSpo2Predicted(smoothedValue);
-                logDebug("SPO2=" + smoothedValue + "% (raw=" + rawValue + ", window=" + missionWindow + "s, " + missionTime + "ms)");
-                break;
-            case RR:
-                rawValue = Math.max(8, Math.min(30, rawValue));
-                smoothedValue = smoothValue(rrHistory, rawValue);
-                if (listener != null) listener.onRrPredicted(smoothedValue);
-                logDebug("RR=" + smoothedValue + " brpm (raw=" + rawValue + ", window=" + missionWindow + "s, " + missionTime + "ms)");
-                break;
+
+        // Normalize single channel (IR only)
+        double mean = 0;
+        for (int i = 0; i < targetLength; i++) {
+            mean += resampledIr[i];
         }
+        mean /= targetLength;
+        double var = 0;
+        for (int i = 0; i < targetLength; i++) {
+            double v = resampledIr[i] - mean;
+            var += v * v;
+        }
+        double std = Math.sqrt(var / Math.max(1, targetLength - 1));
+        if (std < 1e-6) std = 1.0;
+        for (int i = 0; i < targetLength; i++) {
+            resampledIr[i] = (float) ((resampledIr[i] - mean) / std);
+        }
+        
+        long[] rrShape = new long[]{1, targetLength, 1};
+        Tensor rrTensor = Tensor.fromBlob(resampledIr, rrShape);
+        
+        long prepTime = System.currentTimeMillis() - startTime;
+        logDebug("RR inference started: targetLength=" + targetLength + ", prep=" + prepTime + "ms");
+        
+        // RR inference
+        long rrStart = System.currentTimeMillis();
+        if (hasMission(Mission.RR)) {
+            float pred = averagePrediction(missionModules.get(Mission.RR), rrTensor);
+            long rrTime = System.currentTimeMillis() - rrStart;
+            if (listener != null && !Float.isNaN(pred) && pred > 0) {
+                int rawValue = Math.max(8, Math.min(30, Math.round(pred)));  // 正常呼吸率范围 8-30 brpm
+                int smoothedValue = smoothValue(rrHistory, rawValue);
+                listener.onRrPredicted(smoothedValue);
+                logDebug("RR=" + smoothedValue + " brpm (raw=" + rawValue + ", " + rrTime + "ms)");
+            }
+            if (Float.isNaN(pred)) logDebug("RR prediction NaN (" + rrTime + "ms)");
+        }
+        
+        long totalTime = System.currentTimeMillis() - startTime;
+        logDebug("RR total inference time: " + totalTime + "ms");
     }
 
     private boolean hasMission(Mission m) {
