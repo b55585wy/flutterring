@@ -570,6 +570,18 @@ public class MainActivity extends AppCompatActivity implements IResponseListener
                         signalQualityIndicator.setText(quality.getDisplayName());
                         signalQualityIndicator.setTextColor(Color.parseColor(quality.getColor()));
                     }
+                    
+                    // 当信号质量为 POOR 或 NO_SIGNAL 时，清空所有生理指标显示
+                    if (quality == VitalSignsProcessor.SignalQuality.POOR || 
+                        quality == VitalSignsProcessor.SignalQuality.NO_SIGNAL) {
+                        if (heartRateValue != null) heartRateValue.setText("--");
+                        if (bpSysValue != null) bpSysValue.setText("--");
+                        if (bpDiaValue != null) bpDiaValue.setText("--");
+                        if (spo2Value != null) spo2Value.setText("--");
+                        if (rrValue != null) rrValue.setText("--");
+                        recordLog("Signal Quality Poor - Clearing all vital signs display");
+                    }
+                    
                     recordLog("Signal Quality: " + quality.getDisplayName());
                 });
             }
