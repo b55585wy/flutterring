@@ -60,6 +60,7 @@ public class ModelInferenceManager {
     private static final long INFERENCE_INTERVAL_MS_RR = 5000; // 5秒 (RR)
     private long lastInferenceTimeMs = 0;
     private long lastInferenceTimeMsRR = 0;
+    private boolean rrChannelLastPreferred = true;  // 默认尝试 [B, T, C]，失败后退回 [B, C, T]
     
     // 平滑滤波器：存储最近N次预测结果
     private static final int SMOOTHING_WINDOW_SIZE = 5; // 使用最近5次结果
@@ -252,7 +253,7 @@ public class ModelInferenceManager {
             };
         } else if ("rr".equals(missionKey)) {
             roots = new String[] {
-                    "transformer-ring1-rr-all-ir"
+                    "resnet-ring1-rr-all-ir/resp_rr"
             };
         } else {
             roots = new String[] {};
@@ -631,24 +632,48 @@ public class ModelInferenceManager {
             resampledIr[i] = (float) ((resampledIr[i] - mean) / std);
         }
         
-        long[] rrShape = new long[]{1, targetLength, 1};
-        Tensor rrTensor = Tensor.fromBlob(resampledIr, rrShape);
-        
         long prepTime = System.currentTimeMillis() - startTime;
         logDebug("RR inference started: targetLength=" + targetLength + ", prep=" + prepTime + "ms");
         
         // RR inference
         long rrStart = System.currentTimeMillis();
         if (hasMission(Mission.RR)) {
-            float pred = averagePrediction(missionModules.get(Mission.RR), rrTensor);
+            float pred = Float.NaN;
+            boolean inferenceSucceeded = false;
+
+            if (rrChannelLastPreferred) {
+                try {
+                    Tensor rrTensor = Tensor.fromBlob(resampledIr, new long[]{1, targetLength, 1});
+                    pred = averagePrediction(missionModules.get(Mission.RR), rrTensor);
+                    inferenceSucceeded = true;
+                } catch (Throwable e) {
+                    Log.w(TAG, "RR channel-last inference failed, switching to channel-first", e);
+                    logDebug("RR channel-last inference failed: " + e.getMessage());
+                    rrChannelLastPreferred = false;
+                }
+            }
+
+            if (!rrChannelLastPreferred && !inferenceSucceeded) {
+                try {
+                    Tensor rrTensorCF = Tensor.fromBlob(resampledIr, new long[]{1, 1, targetLength});
+                    pred = averagePrediction(missionModules.get(Mission.RR), rrTensorCF);
+                    inferenceSucceeded = true;
+                } catch (Throwable e) {
+                    Log.e(TAG, "RR channel-first inference failed", e);
+                    logDebug("RR channel-first inference failed: " + e.getMessage());
+                }
+            }
+
             long rrTime = System.currentTimeMillis() - rrStart;
-            if (listener != null && !Float.isNaN(pred) && pred > 0) {
+            if (inferenceSucceeded && listener != null && !Float.isNaN(pred) && pred > 0) {
                 int rawValue = Math.max(8, Math.min(30, Math.round(pred)));  // 正常呼吸率范围 8-30 brpm
                 int smoothedValue = smoothValue(rrHistory, rawValue);
                 listener.onRrPredicted(smoothedValue);
                 logDebug("RR=" + smoothedValue + " brpm (raw=" + rawValue + ", " + rrTime + "ms)");
             }
-            if (Float.isNaN(pred)) logDebug("RR prediction NaN (" + rrTime + "ms)");
+            if (!inferenceSucceeded || Float.isNaN(pred)) {
+                logDebug("RR prediction invalid (" + rrTime + "ms)");
+            }
         }
         
         long totalTime = System.currentTimeMillis() - startTime;
