@@ -679,6 +679,44 @@
                                     android:textColor="@android:color/darker_gray" />
 
                             </LinearLayout>
+                            
+                            <!-- RR Card -->
+                            <LinearLayout
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:orientation="vertical"
+                                android:gravity="center"
+                                android:padding="16dp"
+                                android:background="@drawable/vital_sign_background"
+                                android:layout_marginStart="8dp">
+
+                                <TextView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:text="RR"
+                                    android:textSize="12sp"
+                                    android:textColor="@android:color/darker_gray"
+                                    android:layout_marginBottom="8dp" />
+
+                                <TextView
+                                    android:id="@+id/rrValue"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:text="--"
+                                    android:textSize="32sp"
+                                    android:textStyle="bold"
+                                    android:textColor="#9C27B0"
+                                    android:layout_marginBottom="4dp" />
+
+                                <TextView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:text="brpm"
+                                    android:textSize="12sp"
+                                    android:textColor="@android:color/darker_gray" />
+
+                            </LinearLayout>
 
                         </LinearLayout>
 

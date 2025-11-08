@@ -127,6 +127,7 @@ public class MainActivity extends AppCompatActivity implements IResponseListener
     private TextView bpSysValue;
     private TextView bpDiaValue;
     private TextView spo2Value;
+    private TextView rrValue;
     // Removed secondary numeric TextView; right column shows waveform plot
     private TextView signalQualityIndicator;
     private TextView lastUpdateTime;
@@ -386,6 +387,7 @@ public class MainActivity extends AppCompatActivity implements IResponseListener
         bpSysValue = findViewById(R.id.bpSysValue);
         bpDiaValue = findViewById(R.id.bpDiaValue);
         spo2Value = findViewById(R.id.spo2Value);
+        rrValue = findViewById(R.id.rrValue);
         // secondary numeric TextView removed; right column is a PlotView
         signalQualityIndicator = findViewById(R.id.signalQualityIndicator);
         lastUpdateTime = findViewById(R.id.lastUpdateTime);
@@ -610,6 +612,14 @@ public class MainActivity extends AppCompatActivity implements IResponseListener
                 mainHandler.post(() -> {
                     if (spo2Value != null) spo2Value.setText(String.valueOf(percent));
                     recordLog("[Model] SpO2: " + percent + "%");
+                });
+            }
+            
+            @Override
+            public void onRrPredicted(int brpm) {
+                mainHandler.post(() -> {
+                    if (rrValue != null) rrValue.setText(String.valueOf(brpm));
+                    recordLog("[Model] RR: " + brpm + " brpm");
                 });
             }
 

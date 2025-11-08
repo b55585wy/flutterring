@@ -26,13 +26,14 @@ import java.util.Map;
 import android.os.Environment;
 
 public class ModelInferenceManager {
-    public enum Mission { HR, BP_SYS, BP_DIA, SPO2 }
+    public enum Mission { HR, BP_SYS, BP_DIA, SPO2, RR }
 
     public interface Listener {
         void onHrPredicted(int bpm);
         void onBpSysPredicted(int mmHg);
         void onBpDiaPredicted(int mmHg);
         void onSpo2Predicted(int percent);
+        void onRrPredicted(int brpm);  // 呼吸率 breaths per minute
         default void onDebugLog(String message) {}
     }
 
@@ -61,6 +62,7 @@ public class ModelInferenceManager {
     private final ArrayDeque<Integer> bpSysHistory = new ArrayDeque<>();
     private final ArrayDeque<Integer> bpDiaHistory = new ArrayDeque<>();
     private final ArrayDeque<Integer> spo2History = new ArrayDeque<>();
+    private final ArrayDeque<Integer> rrHistory = new ArrayDeque<>();
     
     // 文件日志相关
     private static BufferedWriter fileLogWriter = null;
@@ -194,11 +196,12 @@ public class ModelInferenceManager {
             logDebug("Error listing root assets: " + e.getMessage());
         }
 
-        // Try load four missions. Assets are mapped to app/models/** by Gradle.
+        // Try load five missions. Assets are mapped to app/models/** by Gradle.
         loadMission(Mission.HR, findFirstMissionRoot("hr"));
         loadMission(Mission.BP_SYS, findFirstMissionRoot("BP_sys"));
         loadMission(Mission.BP_DIA, findFirstMissionRoot("BP_dia"));
         loadMission(Mission.SPO2, findFirstMissionRoot("spo2"));
+        loadMission(Mission.RR, findFirstMissionRoot("rr"));
 
         inferWindowAndTargetFs();
         logDebug("Initialized. WindowSeconds=" + windowSeconds + ", targetFs=" + targetFs);
@@ -242,6 +245,10 @@ public class ModelInferenceManager {
             roots = new String[] {
                     "transformer-ring1-spo2-all-irred/spo2"
             };
+        } else if ("rr".equals(missionKey)) {
+            roots = new String[] {
+                    "transformer-ring1-rr-all-ir"
+            };
         } else {
             roots = new String[] {};
         }
@@ -256,7 +263,8 @@ public class ModelInferenceManager {
                     // 验证路径匹配
                     boolean matches = r.endsWith("/" + missionKey) || 
                                      (missionKey.equals("hr") && r.endsWith("/hr")) ||
-                                     (missionKey.equals("spo2") && r.endsWith("/spo2"));
+                                     (missionKey.equals("spo2") && r.endsWith("/spo2")) ||
+                                     (missionKey.equals("rr") && r.contains("rr-all-ir"));
                     if (matches) {
                         logDebug("Mission root candidate success: " + r + " (" + files.length + " entries)");
                         return r;
@@ -545,6 +553,44 @@ public class ModelInferenceManager {
                 logDebug("SPO2=" + smoothedValue + "% (raw=" + rawValue + ", " + spo2Time + "ms)");
             }
             if (Float.isNaN(pred)) logDebug("SpO2 prediction NaN (" + spo2Time + "ms)");
+        }
+        
+        // RR - uses single channel (IR only), similar to HR
+        long rrStart = System.currentTimeMillis();
+        if (hasMission(Mission.RR)) {
+            // Extract IR channel only for RR model: [1, T, 1]
+            float[] rrInput = new float[targetLength];
+            for (int i = 0; i < targetLength; i++) {
+                rrInput[i] = input[i * 2 + 1];  // Extract IR channel (index 1)
+            }
+            // Normalize single channel
+            double mean = 0;
+            for (int i = 0; i < targetLength; i++) {
+                mean += rrInput[i];
+            }
+            mean /= targetLength;
+            double var = 0;
+            for (int i = 0; i < targetLength; i++) {
+                double v = rrInput[i] - mean;
+                var += v * v;
+            }
+            double std = Math.sqrt(var / Math.max(1, targetLength - 1));
+            if (std < 1e-6) std = 1.0;
+            for (int i = 0; i < targetLength; i++) {
+                rrInput[i] = (float) ((rrInput[i] - mean) / std);
+            }
+            
+            long[] rrShape = new long[]{1, targetLength, 1};
+            Tensor rrTensor = Tensor.fromBlob(rrInput, rrShape);
+            float pred = averagePrediction(missionModules.get(Mission.RR), rrTensor);
+            long rrTime = System.currentTimeMillis() - rrStart;
+            if (listener != null && !Float.isNaN(pred) && pred > 0) {
+                int rawValue = Math.max(8, Math.min(30, Math.round(pred)));  // 正常呼吸率范围 8-30 brpm
+                int smoothedValue = smoothValue(rrHistory, rawValue);
+                listener.onRrPredicted(smoothedValue);
+                logDebug("RR=" + smoothedValue + " brpm (raw=" + rawValue + ", " + rrTime + "ms)");
+            }
+            if (Float.isNaN(pred)) logDebug("RR prediction NaN (" + rrTime + "ms)");
         }
         
         long totalTime = System.currentTimeMillis() - startTime;
