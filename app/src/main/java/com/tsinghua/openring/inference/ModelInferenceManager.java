@@ -419,7 +419,7 @@ public class ModelInferenceManager {
         }
     }
 
-    public void onSensorData(long green, long red, long ir, short accX, short accY, short accZ, long timestampMs) {
+    public synchronized void onSensorData(long green, long red, long ir, short accX, short accY, short accZ, long timestampMs) {
         // Buffer for HR/BP/SpO2 (5 seconds)
         greenBuf.addLast((float) green);
         irBuf.addLast((float) ir);
@@ -457,6 +457,26 @@ public class ModelInferenceManager {
                 runRRMission();
             }
         }
+    }
+
+    /**
+     * 重置所有缓冲区、历史记录和定时器，通常在开始/停止测量时调用，防止残留数据影响下一次推理。
+     */
+    public synchronized void reset() {
+        greenBuf.clear();
+        irBuf.clear();
+        irBufRR.clear();
+
+        hrHistory.clear();
+        bpSysHistory.clear();
+        bpDiaHistory.clear();
+        spo2History.clear();
+        rrHistory.clear();
+
+        lastInferenceTimeMs = 0;
+        lastInferenceTimeMsRR = 0;
+
+        logDebug("Buffers, histories, and timers reset.");
     }
 
     private void runHrBpSpo2Missions() {

@@ -1432,6 +1432,11 @@ public class MainActivity extends AppCompatActivity implements IResponseListener
             isMeasuring = true;
             clearAllPlots();
 
+            if (modelInferenceManager != null) {
+                modelInferenceManager.reset();
+            }
+            clearVitalSignsDisplay();
+
             NotificationHandler.setMeasurementTime(measurementTime);
             updateMeasurementUI(true);
             updateMeasurementStatus("Measuring... (0/" + measurementTime + "s)");
@@ -1463,6 +1468,10 @@ public class MainActivity extends AppCompatActivity implements IResponseListener
             
             // Clear HR/RR display values
             clearVitalSignsDisplay();
+
+            if (modelInferenceManager != null) {
+                modelInferenceManager.reset();
+            }
 
             updateMeasurementUI(false);
             updateMeasurementStatus("Measurement stopped");
