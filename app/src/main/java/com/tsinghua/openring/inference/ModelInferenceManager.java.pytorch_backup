@@ -1,0 +1,624 @@
+package com.tsinghua.openring.inference;
+
+import android.content.Context;
+import android.util.Log;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
+import org.pytorch.IValue;
+import org.pytorch.Module;
+import org.pytorch.Tensor;
+
+import java.io.BufferedWriter;
+import java.io.File;
+import java.io.FileWriter;
+import java.io.IOException;
+import java.io.InputStream;
+import java.text.SimpleDateFormat;
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import android.os.Environment;
+
+public class ModelInferenceManager {
+    public enum Mission { HR, BP_SYS, BP_DIA, SPO2 }
+
+    public interface Listener {
+        void onHrPredicted(int bpm);
+        void onBpSysPredicted(int mmHg);
+        void onBpDiaPredicted(int mmHg);
+        void onSpo2Predicted(int percent);
+        default void onDebugLog(String message) {}
+    }
+
+    private static final String TAG = "ModelInference";
+    private final Context appContext;
+    private final Listener listener;
+    private final ObjectMapper mapper = new ObjectMapper();
+
+    private final Map<Mission, List<Module>> missionModules = new HashMap<>();
+    private final Map<Mission, JsonNode> missionConfigs = new HashMap<>();
+
+    private final int sampleRateHz = 25;
+    private int windowSeconds = 5;
+    private int targetFs = 100;
+
+    private final ArrayDeque<Float> greenBuf = new ArrayDeque<>();
+    private final ArrayDeque<Float> irBuf = new ArrayDeque<>();
+    
+    // 推理间隔控制：每2秒推理一次，避免过于频繁
+    private static final long INFERENCE_INTERVAL_MS = 2000; // 2秒
+    private long lastInferenceTimeMs = 0;
+    
+    // 文件日志相关
+    private static BufferedWriter fileLogWriter = null;
+    private static File logFile = null;
+    private static final String LOG_DIR = "OpenRingLogs";
+    private static final String LOG_FILE_PREFIX = "ModelInference_";
+
+    public ModelInferenceManager(Context context, Listener listener) {
+        this.appContext = context.getApplicationContext();
+        this.listener = listener;
+        initializeFileLogging();
+    }
+    
+    /**
+     * 初始化文件日志系统
+     */
+    private void initializeFileLogging() {
+        try {
+            // 创建日志目录：/storage/emulated/0/Documents/OpenRingLogs/
+            File logDir = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS), LOG_DIR);
+            if (!logDir.exists()) {
+                if (!logDir.mkdirs()) {
+                    Log.w(TAG, "Failed to create log directory: " + logDir.getAbsolutePath());
+                    return;
+                }
+            }
+            
+            // 创建日志文件：ModelInference_YYYYMMDD_HHMMSS.txt
+            SimpleDateFormat sdf = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault());
+            String fileName = LOG_FILE_PREFIX + sdf.format(new Date()) + ".txt";
+            logFile = new File(logDir, fileName);
+            
+            fileLogWriter = new BufferedWriter(new FileWriter(logFile, true));
+            writeToFile("=".repeat(80));
+            writeToFile("Model Inference Log Started: " + new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(new Date()));
+            writeToFile("Log File: " + logFile.getAbsolutePath());
+            writeToFile("=".repeat(80));
+            writeToFile("");
+            
+            Log.i(TAG, "File logging initialized: " + logFile.getAbsolutePath());
+        } catch (IOException e) {
+            Log.e(TAG, "Failed to initialize file logging", e);
+        }
+    }
+    
+    /**
+     * 写入日志到文件
+     */
+    private static void writeToFile(String message) {
+        if (fileLogWriter != null) {
+            try {
+                String timestamp = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.getDefault()).format(new Date());
+                fileLogWriter.write("[" + timestamp + "] " + message + "\n");
+                fileLogWriter.flush();
+            } catch (IOException e) {
+                Log.e(TAG, "Failed to write to log file", e);
+            }
+        }
+    }
+    
+    /**
+     * 关闭文件日志
+     */
+    public static void closeFileLogging() {
+        if (fileLogWriter != null) {
+            try {
+                writeToFile("=".repeat(80));
+                writeToFile("Model Inference Log Ended: " + new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(new Date()));
+                writeToFile("=".repeat(80));
+                fileLogWriter.close();
+                fileLogWriter = null;
+                if (logFile != null) {
+                    Log.i(TAG, "File logging closed. Log saved to: " + logFile.getAbsolutePath());
+                }
+            } catch (IOException e) {
+                Log.e(TAG, "Failed to close log file", e);
+            }
+        }
+    }
+    
+    /**
+     * 获取当前日志文件路径（用于显示给用户）
+     */
+    public static String getLogFilePath() {
+        return logFile != null ? logFile.getAbsolutePath() : null;
+    }
+
+    public void init() {
+        logDebug("ModelInferenceManager.init() called");
+        logDebug("Listener is " + (listener == null ? "null" : listener.getClass().getName()));
+        
+        // List all top-level assets
+        try {
+            String[] rootAssets = appContext.getAssets().list("");
+            logDebug("=== Root Assets (total " + (rootAssets == null ? 0 : rootAssets.length) + ") ===");
+            if (rootAssets != null) {
+                for (String asset : rootAssets) {
+                    logDebug("  - " + asset);
+                    // For directories starting with "transformer", list subdirs
+                    if (asset.startsWith("transformer")) {
+                        try {
+                            String[] subDirs = appContext.getAssets().list(asset);
+                            if (subDirs != null && subDirs.length > 0) {
+                                for (String subDir : subDirs) {
+                                    logDebug("    - " + asset + "/" + subDir);
+                                    // List contents of each mission folder (e.g., hr, BP_sys)
+                                    try {
+                                        String[] foldDirs = appContext.getAssets().list(asset + "/" + subDir);
+                                        if (foldDirs != null && foldDirs.length > 0) {
+                                            for (String foldDir : foldDirs) {
+                                                logDebug("      - " + asset + "/" + subDir + "/" + foldDir);
+                                                // List files in each Fold-X directory
+                                                try {
+                                                    String[] files = appContext.getAssets().list(asset + "/" + subDir + "/" + foldDir);
+                                                    if (files != null && files.length > 0) {
+                                                        for (String file : files) {
+                                                            logDebug("        * " + file);
+                                                        }
+                                                    }
+                                                } catch (IOException ignored) {}
+                                            }
+                                        }
+                                    } catch (IOException ignored) {}
+                                }
+                            }
+                        } catch (IOException ignored) {}
+                    }
+                }
+            }
+        } catch (IOException e) {
+            logDebug("Error listing root assets: " + e.getMessage());
+        }
+
+        // Try load four missions. Assets are mapped to app/models/** by Gradle.
+        loadMission(Mission.HR, findFirstMissionRoot("hr"));
+        loadMission(Mission.BP_SYS, findFirstMissionRoot("BP_sys"));
+        loadMission(Mission.BP_DIA, findFirstMissionRoot("BP_dia"));
+        loadMission(Mission.SPO2, findFirstMissionRoot("spo2"));
+
+        inferWindowAndTargetFs();
+        logDebug("Initialized. WindowSeconds=" + windowSeconds + ", targetFs=" + targetFs);
+    }
+
+    private void inferWindowAndTargetFs() {
+        for (JsonNode cfg : missionConfigs.values()) {
+            if (cfg == null) continue;
+            JsonNode dataset = cfg.get("dataset");
+            if (dataset != null) {
+                if (dataset.has("window_duration")) {
+                    try {
+                        windowSeconds = Math.max(5, dataset.get("window_duration").asInt());
+                    } catch (Exception ignored) {}
+                }
+                if (dataset.has("target_fs")) {
+                    try {
+                        targetFs = Math.max(sampleRateHz, dataset.get("target_fs").asInt());
+                    } catch (Exception ignored) {}
+                }
+            }
+        }
+    }
+
+    private String findFirstMissionRoot(String missionKey) {
+        // Known roots under assets (mapped from app/models): try common patterns
+        // Assets are packaged with 'models' as a source root, but the AssetManager paths are root-relative.
+        String[] roots;
+        
+        // 根据missionKey选择不同的路径模式
+        if ("hr".equals(missionKey)) {
+            roots = new String[] {
+                    "transformer-ring1-hr-all-ir/hr",
+                    "transformer-ring1-hr-all-irred/hr"
+            };
+        } else if ("BP_sys".equals(missionKey) || "BP_dia".equals(missionKey)) {
+            roots = new String[] {
+                    "transformer-ring1-bp-all-irred/" + missionKey
+            };
+        } else if ("spo2".equals(missionKey)) {
+            roots = new String[] {
+                    "transformer-ring1-spo2-all-irred/spo2"
+            };
+        } else {
+            roots = new String[] {};
+        }
+        
+        logDebug("Searching for mission root: " + missionKey);
+        for (String r : roots) {
+            try {
+                logDebug("Trying root path: " + r);
+                String[] files = appContext.getAssets().list(r);
+                if (files != null && files.length > 0) {
+                    logDebug("Root path exists: " + r + " (" + files.length + " entries)");
+                    // 验证路径匹配
+                    boolean matches = r.endsWith("/" + missionKey) || 
+                                     (missionKey.equals("hr") && r.endsWith("/hr")) ||
+                                     (missionKey.equals("spo2") && r.endsWith("/spo2"));
+                    if (matches) {
+                        logDebug("Mission root candidate success: " + r + " (" + files.length + " entries)");
+                        return r;
+                    } else {
+                        logDebug("Root path doesn't match missionKey: " + r + " (expected ends with /" + missionKey + ")");
+                    }
+                } else {
+                    logDebug("Mission root candidate empty or not found: " + r);
+                }
+            } catch (IOException e) {
+                logDebug("IOException checking root " + r + ": " + e.getMessage());
+            }
+        }
+        logDebug("Mission root not found for key: " + missionKey);
+        return null;
+    }
+
+    public String reportStatus() {
+        logDebug("reportStatus() invoked");
+        StringBuilder sb = new StringBuilder();
+        for (Mission m : Mission.values()) {
+            List<Module> list = missionModules.get(m);
+            int n = (list == null) ? 0 : list.size();
+            sb.append("[Model] ").append(m.name()).append(": folds=").append(n).append('\n');
+        }
+        return sb.toString();
+    }
+
+    private void loadMission(Mission mission, String missionRoot) {
+        logDebug("loadMission called: " + mission + " root=" + missionRoot);
+        if (missionRoot == null) {
+            Log.w(TAG, "Mission root not found: " + mission);
+            logDebug("Mission root not found for " + mission);
+            return;
+        }
+        try {
+            String[] subDirs = appContext.getAssets().list(missionRoot);
+            if (subDirs == null) {
+                logDebug("Mission root has no subdirs: " + missionRoot);
+                logDebug("Mission root has no subdirs: " + missionRoot);
+                return;
+            }
+
+            // Each Fold-X contains a json and a pt file
+            List<Module> modules = new ArrayList<>();
+            logDebug("Found " + subDirs.length + " subdirs in " + missionRoot);
+            for (String sub : subDirs) {
+                String foldDir = missionRoot + "/" + sub;
+                logDebug("Checking fold directory: " + foldDir);
+                String[] foldFiles = appContext.getAssets().list(foldDir);
+                if (foldFiles == null || foldFiles.length == 0) {
+                    logDebug("Fold directory empty or not found: " + foldDir);
+                    continue;
+                }
+                
+                logDebug("Fold " + sub + " contains " + foldFiles.length + " files:");
+                for (String f : foldFiles) {
+                    logDebug("  - " + f);
+                }
+
+                String jsonPath = null;
+                String ptPath = null;
+                // Prefer TorchScript files with _ts suffix if available
+                for (String f : foldFiles) {
+                    if (f.endsWith(".json")) {
+                        jsonPath = foldDir + "/" + f;
+                        logDebug("Found JSON: " + jsonPath);
+                    }
+                    if (f.endsWith("_ts.pt")) {
+                        ptPath = foldDir + "/" + f;
+                        logDebug("Found PT (_ts): " + ptPath);
+                    }
+                }
+                if (ptPath == null) {
+                    for (String f : foldFiles) {
+                        if (f.endsWith(".pt")) {
+                            ptPath = foldDir + "/" + f;
+                            logDebug("Found PT: " + ptPath);
+                            break;
+                        }
+                    }
+                }
+                
+                if (jsonPath == null) {
+                    logDebug("WARNING: No JSON file found in " + foldDir);
+                }
+                if (ptPath == null) {
+                    logDebug("WARNING: No PT file found in " + foldDir);
+                }
+                
+                if (jsonPath != null && ptPath != null) {
+                    logDebug("Both JSON and PT files found, attempting to load...");
+                    // Load config (only once per mission, prefer first)
+                    if (!missionConfigs.containsKey(mission)) {
+                        logDebug("Loading config from: " + jsonPath);
+                        try (InputStream is = appContext.getAssets().open(jsonPath)) {
+                            missionConfigs.put(mission, mapper.readTree(is));
+                            logDebug("Config loaded successfully for " + mission);
+                        } catch (Exception e) {
+                            Log.w(TAG, "Failed reading config: " + jsonPath, e);
+                            logDebug("Failed reading config: " + jsonPath + " - " + e.getMessage());
+                            logDebug("Exception type: " + e.getClass().getName());
+                            if (e.getCause() != null) {
+                                logDebug("Cause: " + e.getCause().getMessage());
+                            }
+                        }
+                    } else {
+                        logDebug("Config already loaded for " + mission + ", skipping");
+                    }
+                    
+                    logDebug("Loading model from: " + ptPath);
+                    try {
+                        String localPath = AssetsUtils.assetFilePath(appContext, ptPath);
+                        logDebug("Model file copied to: " + localPath);
+                        Module m = Module.load(localPath);
+                        modules.add(m);
+                        Log.i(TAG, "Loaded module: " + ptPath);
+                        logDebug("Model loaded successfully: " + ptPath);
+                    } catch (Throwable t) {
+                        Log.w(TAG, "Skip module (load failed): " + ptPath, t);
+                        logDebug("Model load failed for " + ptPath);
+                        logDebug("Error message: " + t.getMessage());
+                        logDebug("Error type: " + t.getClass().getName());
+                        if (t.getCause() != null) {
+                            logDebug("Cause: " + t.getCause().getMessage());
+                        }
+                        // 打印完整的堆栈跟踪（仅前几行）
+                        StackTraceElement[] stack = t.getStackTrace();
+                        for (int i = 0; i < Math.min(5, stack.length); i++) {
+                            logDebug("  at " + stack[i].toString());
+                        }
+                    }
+                } else {
+                    logDebug("Skipping fold " + sub + " - missing files (jsonPath=" + (jsonPath != null) + ", ptPath=" + (ptPath != null) + ")");
+                }
+            }
+            if (!modules.isEmpty()) {
+                missionModules.put(mission, modules);
+                Log.i(TAG, "Mission " + mission + " folds loaded: " + modules.size());
+                logDebug("Mission " + mission + " folds loaded: " + modules.size());
+            } else {
+                logDebug("Mission " + mission + " loaded 0 modules");
+            }
+        } catch (IOException e) {
+            Log.e(TAG, "Error loading mission: " + mission, e);
+            logDebug("Error loading mission " + mission + ": " + e.getMessage());
+        }
+    }
+
+    public void onSensorData(long green, long red, long ir, short accX, short accY, short accZ, long timestampMs) {
+        // Buffer only what we need (green, ir)
+        greenBuf.addLast((float) green);
+        irBuf.addLast((float) ir);
+        int maxSize = windowSeconds * sampleRateHz;
+        while (greenBuf.size() > maxSize) greenBuf.removeFirst();
+        while (irBuf.size() > maxSize) irBuf.removeFirst();
+
+        // 调试：每100个样本记录一次缓冲区状态
+        if (greenBuf.size() % 100 == 0 && greenBuf.size() > 0) {
+            logDebug("Buffer: " + greenBuf.size() + "/" + maxSize + " samples");
+        }
+
+        // 只有当缓冲区满，且距离上次推理超过指定间隔时才运行
+        if (greenBuf.size() >= maxSize && irBuf.size() >= maxSize) {
+            long currentTime = System.currentTimeMillis();
+            if (currentTime - lastInferenceTimeMs >= INFERENCE_INTERVAL_MS) {
+                lastInferenceTimeMs = currentTime;
+                logDebug("Buffer full, starting inference. Missions: HR=" + hasMission(Mission.HR) + 
+                        ", BP_SYS=" + hasMission(Mission.BP_SYS) + ", BP_DIA=" + hasMission(Mission.BP_DIA) + 
+                        ", SPO2=" + hasMission(Mission.SPO2));
+                runAllMissions();
+            }
+        }
+    }
+
+    private void runAllMissions() {
+        long startTime = System.currentTimeMillis();
+        
+        // Prepare input tensor [1, C, T] with C=2 (green, ir)
+        int targetLength = windowSeconds * targetFs;
+        if (targetLength <= 0) {
+            logDebug("Target length invalid: " + targetLength);
+            return;
+        }
+
+        float[] resampledGreen = resampleBuffer(greenBuf, targetLength);
+        float[] resampledIr = resampleBuffer(irBuf, targetLength);
+        if (resampledGreen == null || resampledIr == null) {
+            logDebug("Resample failed due to insufficient data");
+            return;
+        }
+
+        float[] input = new float[targetLength * 2];
+        for (int i = 0; i < targetLength; i++) {
+            input[i] = resampledGreen[i]; // channel 0
+            input[targetLength + i] = resampledIr[i]; // channel 1
+        }
+
+        // normalize per-channel (zero mean, unit var) for numerical stability
+        normalizeInPlace(input, targetLength);
+
+        long[] shape = new long[]{1, 2, targetLength};
+        Tensor tensor = Tensor.fromBlob(input, shape);
+        
+        long prepTime = System.currentTimeMillis() - startTime;
+        logDebug("Inference started: targetLength=" + targetLength + ", prep=" + prepTime + "ms");
+
+        // HR
+        long hrStart = System.currentTimeMillis();
+        if (hasMission(Mission.HR)) {
+            float pred = averagePrediction(missionModules.get(Mission.HR), tensor);
+            long hrTime = System.currentTimeMillis() - hrStart;
+            if (listener != null && !Float.isNaN(pred) && pred > 0) {
+                listener.onHrPredicted(Math.round(pred));
+                logDebug("HR=" + Math.round(pred) + " bpm (" + hrTime + "ms)");
+            }
+            if (Float.isNaN(pred)) logDebug("HR prediction NaN (" + hrTime + "ms)");
+        }
+        
+        // BP SYS
+        long bpSysStart = System.currentTimeMillis();
+        if (hasMission(Mission.BP_SYS)) {
+            float pred = averagePrediction(missionModules.get(Mission.BP_SYS), tensor);
+            long bpSysTime = System.currentTimeMillis() - bpSysStart;
+            if (listener != null && !Float.isNaN(pred) && pred > 0) {
+                listener.onBpSysPredicted(Math.round(pred));
+                logDebug("BP_SYS=" + Math.round(pred) + " mmHg (" + bpSysTime + "ms)");
+            }
+            if (Float.isNaN(pred)) logDebug("BP_SYS prediction NaN (" + bpSysTime + "ms)");
+        }
+        
+        // BP DIA
+        long bpDiaStart = System.currentTimeMillis();
+        if (hasMission(Mission.BP_DIA)) {
+            float pred = averagePrediction(missionModules.get(Mission.BP_DIA), tensor);
+            long bpDiaTime = System.currentTimeMillis() - bpDiaStart;
+            if (listener != null && !Float.isNaN(pred) && pred > 0) {
+                listener.onBpDiaPredicted(Math.round(pred));
+                logDebug("BP_DIA=" + Math.round(pred) + " mmHg (" + bpDiaTime + "ms)");
+            }
+            if (Float.isNaN(pred)) logDebug("BP_DIA prediction NaN (" + bpDiaTime + "ms)");
+        }
+        
+        // SpO2
+        long spo2Start = System.currentTimeMillis();
+        if (hasMission(Mission.SPO2)) {
+            float pred = averagePrediction(missionModules.get(Mission.SPO2), tensor);
+            long spo2Time = System.currentTimeMillis() - spo2Start;
+            if (listener != null && !Float.isNaN(pred) && pred > 0) {
+                int val = Math.max(70, Math.min(100, Math.round(pred)));
+                listener.onSpo2Predicted(val);
+                logDebug("SPO2=" + val + "% (" + spo2Time + "ms)");
+            }
+            if (Float.isNaN(pred)) logDebug("SpO2 prediction NaN (" + spo2Time + "ms)");
+        }
+        
+        long totalTime = System.currentTimeMillis() - startTime;
+        logDebug("Total inference time: " + totalTime + "ms");
+    }
+
+    private boolean hasMission(Mission m) {
+        List<Module> list = missionModules.get(m);
+        return list != null && !list.isEmpty();
+    }
+
+    private float averagePrediction(List<Module> modules, Tensor input) {
+        if (modules == null || modules.isEmpty()) return Float.NaN;
+        float sum = 0f;
+        int n = 0;
+        for (Module m : modules) {
+            try {
+                IValue out = m.forward(IValue.from(input));
+                Tensor t = out.toTensor();
+                float[] arr = t.getDataAsFloatArray();
+                if (arr.length > 0) {
+                    sum += arr[arr.length - 1]; // support either scalar or last-step output
+                    n++;
+                }
+                if (arr.length == 0) logDebug("Empty output tensor from module");
+            } catch (Throwable e) {
+                Log.w(TAG, "Forward failed on one fold", e);
+                 logDebug("Forward failed: " + e.getMessage());
+            }
+        }
+        return n > 0 ? sum / n : Float.NaN;
+    }
+
+    private float[] resampleBuffer(ArrayDeque<Float> buffer, int targetLength) {
+        int srcSize = buffer.size();
+        if (srcSize < 2 || targetLength < 2) {
+            return null;
+        }
+        float[] src = new float[srcSize];
+        int idx = 0;
+        for (Float v : buffer) {
+            src[idx++] = v;
+        }
+
+        float[] out = new float[targetLength];
+        float ratio = (float) sampleRateHz / targetFs;
+        for (int i = 0; i < targetLength; i++) {
+            float srcPos = i * ratio;
+            int idx0 = (int) Math.floor(srcPos);
+            int idx1 = Math.min(srcSize - 1, idx0 + 1);
+            float frac = srcPos - idx0;
+            if (idx0 >= srcSize) {
+                out[i] = src[srcSize - 1];
+            } else {
+                float v0 = src[idx0];
+                float v1 = src[idx1];
+                out[i] = v0 + (v1 - v0) * frac;
+            }
+        }
+        return out;
+    }
+
+    private void normalizeInPlace(float[] data, int lengthPerChannel) {
+        int channels = 2;
+        for (int c = 0; c < channels; c++) {
+            int offset = c * lengthPerChannel;
+            double mean = 0;
+            for (int t = 0; t < lengthPerChannel; t++) {
+                mean += data[offset + t];
+            }
+            mean /= lengthPerChannel;
+            double var = 0;
+            for (int t = 0; t < lengthPerChannel; t++) {
+                double v = data[offset + t] - mean;
+                var += v * v;
+            }
+            double std = Math.sqrt(var / Math.max(1, lengthPerChannel - 1));
+            if (std < 1e-6) std = 1.0;
+            for (int t = 0; t < lengthPerChannel; t++) {
+                data[offset + t] = (float) ((data[offset + t] - mean) / std);
+            }
+        }
+    }
+
+    private void logDebug(String message) {
+        // 输出到Logcat
+        Log.d(TAG, message);
+        
+        // 输出到UI（通过listener）
+        if (listener != null) {
+            listener.onDebugLog(message);
+        }
+        
+        // 写入文件
+        writeToFile(message);
+    }
+
+    private void logAssetListing(String path, String label) {
+        try {
+            String[] entries = appContext.getAssets().list(path);
+            if (entries == null) {
+                logDebug("Assets list null for " + label + " (" + path + ")");
+                return;
+            }
+            StringBuilder sb = new StringBuilder();
+            sb.append("Assets[" + label + "]=");
+            for (int i = 0; i < entries.length; i++) {
+                if (i > 0) sb.append(", ");
+                sb.append(entries[i]);
+            }
+            logDebug(sb.toString());
+        } catch (IOException e) {
+            logDebug("Assets list error for " + label + ": " + e.getMessage());
+        }
+    }
+}
+
+

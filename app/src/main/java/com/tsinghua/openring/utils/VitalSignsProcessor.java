@@ -14,18 +14,17 @@ public class VitalSignsProcessor {
     
     // Configuration constants
     private static final int SAMPLE_RATE = 25; // Hz - based on your ring's sampling rate
-    private static final int HR_WINDOW_SIZE = SAMPLE_RATE * 8; // 8 seconds for HR calculation
-    private static final int RR_WINDOW_SIZE = SAMPLE_RATE * 30; // 30 seconds for RR calculation
-    private static final int MIN_PEAKS_FOR_HR = 3; // Minimum peaks needed for HR calculation
-    private static final int MIN_PEAKS_FOR_RR = 2; // Minimum peaks needed for RR calculation
+    private static final int HR_WINDOW_SIZE = SAMPLE_RATE * 5; // 5 seconds sliding window for HR calculation
+    private static final int HR_UPDATE_INTERVAL = SAMPLE_RATE * 1; // Update every 1 second
+    private static final int MIN_PEAKS_FOR_HR = 2; // Minimum peaks needed for HR calculation (reduced for 1s updates)
     
     // Heart rate range constraints (BPM)
     private static final int MIN_HR_BPM = 40;
     private static final int MAX_HR_BPM = 200;
     
-    // Respiratory rate range constraints (RPM)
-    private static final int MIN_RR_RPM = 8;
-    private static final int MAX_RR_RPM = 40;
+    // SpO2 range constraints (%)
+    private static final int MIN_SPO2 = 70;
+    private static final int MAX_SPO2 = 100;
     
     // Data buffers for processing
     private final List<Long> ppgGreenBuffer = new ArrayList<>();
@@ -37,14 +36,23 @@ public class VitalSignsProcessor {
     
     // Current vital signs
     private volatile int currentHeartRate = -1;
-    private volatile int currentRespiratoryRate = -1;
     private volatile SignalQuality currentSignalQuality = SignalQuality.POOR;
     private volatile long lastUpdateTime = 0;
     
-    // Callback interface for vital signs updates
+    // HR/SpO2 smoothing and validation
+    private final List<Integer> hrHistory = new ArrayList<>(); // Recent HR values for smoothing (5 seconds)
+    private final List<Integer> spo2History = new ArrayList<>(); // Recent SpO2 values for smoothing
+    private static final int HR_HISTORY_SIZE = 5; // Keep last 5 HR readings (5 seconds, 1 per second)
+    private static final int SPO2_HISTORY_SIZE = 5; // Keep last 5 SpO2 readings
+    private static final int MAX_HR_CHANGE_BPM = 10; // Maximum HR change per 1s update
+    private static final int OUTLIER_THRESHOLD_BPM = 30; // If change > 30 BPM, treat as outlier
+    private static final int MIN_CONFIRMATIONS = 3; // Need 3 similar readings to accept large change
+    
+    // Sample counter for update interval
+    private int samplesSinceLastHRUpdate = 0;
+        // Callback interface for vital signs updates
     public interface VitalSignsCallback {
         void onHeartRateUpdate(int heartRate);
-        void onRespiratoryRateUpdate(int respiratoryRate);
         void onSignalQualityUpdate(SignalQuality quality);
     }
     
@@ -85,27 +93,27 @@ public class VitalSignsProcessor {
         accZBuffer.add(accZ);
         timestampBuffer.add(timestamp);
         
-        // Maintain buffer size for HR calculation
+        // Maintain buffer size for HR calculation (5 second sliding window)
         if (ppgGreenBuffer.size() > HR_WINDOW_SIZE) {
             ppgGreenBuffer.remove(0);
             ppgIrBuffer.remove(0);
             timestampBuffer.remove(0);
         }
         
-        // Maintain buffer size for RR calculation
-        if (accXBuffer.size() > RR_WINDOW_SIZE) {
+        // Maintain buffer size for accelerometer (keep same window)
+        if (accXBuffer.size() > HR_WINDOW_SIZE) {
             accXBuffer.remove(0);
             accYBuffer.remove(0);
             accZBuffer.remove(0);
         }
         
-        // Process vital signs if we have enough data
-        if (ppgGreenBuffer.size() >= HR_WINDOW_SIZE) {
-            processHeartRate();
-        }
+        // Increment sample counter
+        samplesSinceLastHRUpdate++;
         
-        if (accXBuffer.size() >= RR_WINDOW_SIZE) {
-            processRespiratoryRate();
+        // Update HR every 1 second (every 25 samples at 25Hz)
+        if (ppgGreenBuffer.size() >= HR_WINDOW_SIZE && samplesSinceLastHRUpdate >= HR_UPDATE_INTERVAL) {
+            processHeartRate();
+            samplesSinceLastHRUpdate = 0; // Reset counter
         }
         
         // Update signal quality
@@ -116,24 +124,33 @@ public class VitalSignsProcessor {
     
     /**
      * Process heart rate from PPG data using peak detection
+     * Updates every 1 second with 5-second sliding window
      */
     private void processHeartRate() {
         try {
             // Use Green PPG for heart rate calculation (typically best signal)
             List<Long> ppgData = new ArrayList<>(ppgGreenBuffer);
             
-            // Apply basic filtering
-            List<Double> filteredPPG = applyBandpassFilter(ppgData, 0.5, 4.0); // 0.5-4Hz for HR
+            // Apply bandpass filter (0.5-4Hz = 30-240 BPM)
+            List<Double> filteredPPG = applyBandpassFilter(ppgData, 0.5, 4.0);
             
-            // Detect peaks
-            List<Integer> peaks = detectPeaks(filteredPPG, 0.6); // 60% threshold
+            // Detect peaks with adaptive threshold
+            List<Integer> peaks = detectPeaks(filteredPPG, 0.5); // Lower threshold for better detection
             
             if (peaks.size() >= MIN_PEAKS_FOR_HR) {
                 // Calculate intervals between peaks
                 List<Double> intervals = new ArrayList<>();
                 for (int i = 1; i < peaks.size(); i++) {
                     double interval = (peaks.get(i) - peaks.get(i-1)) / (double) SAMPLE_RATE;
-                    intervals.add(interval);
+                    // Filter out unreasonable intervals (< 0.3s or > 2.0s)
+                    if (interval >= 0.3 && interval <= 2.0) {
+                        intervals.add(interval);
+                    }
+                }
+                
+                if (intervals.isEmpty()) {
+                    Log.v(TAG, "HR: No valid intervals after filtering");
+                    return;
                 }
                 
                 // Calculate median interval for robustness
@@ -143,16 +160,24 @@ public class VitalSignsProcessor {
                 // Convert to BPM
                 int heartRate = (int) Math.round(60.0 / medianInterval);
                 
-                // Validate heart rate range
+                // Validate and smooth heart rate with 5-second history
                 if (heartRate >= MIN_HR_BPM && heartRate <= MAX_HR_BPM) {
-                    if (currentHeartRate != heartRate) {
-                        currentHeartRate = heartRate;
+                    int smoothedHR = smoothHeartRateWith5SecHistory(heartRate);
+                    
+                    if (smoothedHR > 0) {
+                        currentHeartRate = smoothedHR;
                         if (callback != null) {
-                            callback.onHeartRateUpdate(heartRate);
+                            callback.onHeartRateUpdate(smoothedHR);
                         }
-                        Log.d(TAG, "Heart Rate Updated: " + heartRate + " BPM");
+                        Log.d(TAG, String.format("HR: %d BPM (raw: %d, peaks: %d)", 
+                            smoothedHR, heartRate, peaks.size()));
                     }
+                } else {
+                    Log.v(TAG, String.format("HR: %d BPM out of range [%d-%d]", 
+                        heartRate, MIN_HR_BPM, MAX_HR_BPM));
                 }
+            } else {
+                Log.v(TAG, String.format("HR: Only %d peaks (need %d)", peaks.size(), MIN_PEAKS_FOR_HR));
             }
         } catch (Exception e) {
             Log.e(TAG, "Error processing heart rate", e);
@@ -160,46 +185,107 @@ public class VitalSignsProcessor {
     }
     
     /**
-     * Process respiratory rate from accelerometer data
+     * Process SpO2 (blood oxygen saturation) from Red and IR PPG signals
+     * Uses R-value method: R = (AC_red/DC_red) / (AC_ir/DC_ir)
      */
-    private void processRespiratoryRate() {
-        try {
-            // Calculate magnitude of acceleration vector
-            List<Double> accMagnitude = new ArrayList<>();
-            for (int i = 0; i < accXBuffer.size(); i++) {
-                double x = accXBuffer.get(i);
-                double y = accYBuffer.get(i);
-                double z = accZBuffer.get(i);
-                double magnitude = Math.sqrt(x*x + y*y + z*z);
-                accMagnitude.add(magnitude);
-            }
-            
-            // Apply low-pass filter for respiratory rate (0.1-0.7Hz)
-            List<Double> filteredAcc = applyBandpassFilter(accMagnitude, 0.1, 0.7);
-            
-            // Detect peaks for respiratory cycles
-            List<Integer> peaks = detectPeaks(filteredAcc, 0.4); // 40% threshold
-            
-            if (peaks.size() >= MIN_PEAKS_FOR_RR) {
-                // Calculate respiratory rate from peak intervals
-                double totalTime = RR_WINDOW_SIZE / (double) SAMPLE_RATE; // Total time in seconds
-                int respiratoryRate = (int) Math.round((peaks.size() - 1) * 60.0 / totalTime);
-                
-                // Validate respiratory rate range
-                if (respiratoryRate >= MIN_RR_RPM && respiratoryRate <= MAX_RR_RPM) {
-                    if (currentRespiratoryRate != respiratoryRate) {
-                        currentRespiratoryRate = respiratoryRate;
-                        if (callback != null) {
-                            callback.onRespiratoryRateUpdate(respiratoryRate);
-                        }
-                        Log.d(TAG, "Respiratory Rate Updated: " + respiratoryRate + " RPM");
-                    }
-                }
-            }
-        } catch (Exception e) {
-            Log.e(TAG, "Error processing respiratory rate", e);
-        }
+    // SpO2 processing removed as per request
+    
+    /**
+     * Calculate AC component (peak-to-peak amplitude) of PPG signal
+     */
+    private double calculateAC(List<Long> ppgData) {
+        if (ppgData.isEmpty()) return 0;
+        
+        long max = Collections.max(ppgData);
+        long min = Collections.min(ppgData);
+        return (max - min) / 2.0; // Half of peak-to-peak
     }
+    
+    /**
+     * Calculate DC component (average) of PPG signal
+     */
+    private double calculateDC(List<Long> ppgData) {
+        if (ppgData.isEmpty()) return 0;
+        
+        long sum = 0;
+        for (long value : ppgData) {
+            sum += value;
+        }
+        return sum / (double) ppgData.size();
+    }
+    
+    /**
+     * Smooth heart rate with 5-second history (simplified algorithm)
+     * - Rejects outliers (>30 BPM change)
+     * - Limits max change per update (10 BPM/second)
+     * - Applies weighted averaging with 5-second history
+     */
+    private int smoothHeartRateWith5SecHistory(int rawHR) {
+        // Add to history (keeps last 5 readings = 5 seconds at 1 Hz)
+        hrHistory.add(rawHR);
+        if (hrHistory.size() > HR_HISTORY_SIZE) {
+            hrHistory.remove(0);
+        }
+        
+        // First reading - accept it
+        if (currentHeartRate == -1) {
+            Log.d(TAG, "HR: First reading " + rawHR + " BPM");
+            return rawHR;
+        }
+        
+        int hrChange = Math.abs(rawHR - currentHeartRate);
+        
+        // Level 1: Reject extreme outliers (>30 BPM change in 1 second)
+        if (hrChange > OUTLIER_THRESHOLD_BPM) {
+            Log.w(TAG, String.format("HR: Outlier rejected %d->%d (%d BPM)", 
+                currentHeartRate, rawHR, hrChange));
+            // Remove outlier from history
+            if (!hrHistory.isEmpty()) {
+                hrHistory.remove(hrHistory.size() - 1);
+            }
+            return currentHeartRate; // Keep current value
+        }
+        
+        // Level 2: Limit large changes (>10 BPM)
+        if (hrChange > MAX_HR_CHANGE_BPM) {
+            int limitedHR = rawHR > currentHeartRate 
+                ? currentHeartRate + MAX_HR_CHANGE_BPM 
+                : currentHeartRate - MAX_HR_CHANGE_BPM;
+            Log.d(TAG, String.format("HR: Limited %d->%d to %d BPM", 
+                currentHeartRate, rawHR, limitedHR));
+            return limitedHR;
+        }
+        
+        // Level 3: Smooth with 5-second history
+        if (hrHistory.size() >= 3) {
+            // Calculate weighted average: more weight on recent values
+            int smoothedHR = 0;
+            int totalWeight = 0;
+            
+            for (int i = 0; i < hrHistory.size(); i++) {
+                int weight = i + 1; // Linear weights: 1, 2, 3, 4, 5 (newer values have more weight)
+                smoothedHR += hrHistory.get(i) * weight;
+                totalWeight += weight;
+            }
+            smoothedHR = Math.round((float) smoothedHR / totalWeight);
+            
+            Log.v(TAG, String.format("HR: Smoothed %d->%d BPM (history size: %d)", 
+                rawHR, smoothedHR, hrHistory.size()));
+            return smoothedHR;
+        }
+        
+        // Not enough history - simple average
+        if (hrHistory.size() >= 2) {
+            int sum = 0;
+            for (int hr : hrHistory) {
+                sum += hr;
+            }
+            return sum / hrHistory.size();
+        }
+        
+        return rawHR;
+    }
+    
     
     /**
      * Simple bandpass filter implementation
@@ -296,6 +382,7 @@ public class VitalSignsProcessor {
         }
     }
     
+    
     /**
      * Clear all buffers and reset state
      */
@@ -307,17 +394,19 @@ public class VitalSignsProcessor {
         accZBuffer.clear();
         timestampBuffer.clear();
         
+        hrHistory.clear();
+        spo2History.clear();
+        
         currentHeartRate = -1;
-        currentRespiratoryRate = -1;
         currentSignalQuality = SignalQuality.NO_SIGNAL;
         lastUpdateTime = 0;
+        samplesSinceLastHRUpdate = 0;
         
         Log.d(TAG, "VitalSignsProcessor reset");
     }
     
     // Getters for current values
     public int getCurrentHeartRate() { return currentHeartRate; }
-    public int getCurrentRespiratoryRate() { return currentRespiratoryRate; }
     public SignalQuality getCurrentSignalQuality() { return currentSignalQuality; }
     public long getLastUpdateTime() { return lastUpdateTime; }
     
@@ -327,6 +416,6 @@ public class VitalSignsProcessor {
     public String getBufferStatus() {
         return String.format("PPG: %d/%d, ACC: %d/%d", 
                 ppgGreenBuffer.size(), HR_WINDOW_SIZE,
-                accXBuffer.size(), RR_WINDOW_SIZE);
+                accXBuffer.size(), HR_WINDOW_SIZE);
     }
 }

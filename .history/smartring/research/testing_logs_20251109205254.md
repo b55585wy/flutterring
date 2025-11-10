@@ -1,0 +1,73 @@
+# Event Stream & BLE 调试记录
+
+> 目的：为 M1 WP2（事件流重构验证）提供可执行的验证步骤，确保多订阅场景下 `RingPlatform.eventStream` 行为稳定，并沉淀后续回归流程。
+
+## 2025-11-03：事件流广播验证计划
+
+### 场景 A：多订阅监听 `deviceFound`
+
+**自动化验证**（2025-11-03）
+
+- 新增 `openring_flutter/test/infrastructure/ring_platform_event_stream_test.dart`。
+- 通过 `MethodChannel.setMockMethodCallHandler` 应答 `listen/cancel` 握手，再使用 `handlePlatformMessage` 推送模拟事件。
+- 验证两个监听器都收到 `deviceFound` 事件，且取消订阅后不再收到新事件。
+- 命令：`flutter test test/infrastructure/ring_platform_event_stream_test.dart`
+- 结果：✅ 通过。
+
+### 场景 D：控制器单元测试
+
+- 新增 `test/application/ble_scan_controller_test.dart`、`test/application/device_connection_controller_test.dart`。
+- 覆盖扫描去重、状态切换、连接事件与电量更新。
+- 命令：`flutter test test/application/`
+- 与事件流测试一起执行 `flutter test`，2025-11-03 ✅。
+
+### 场景 E：真机扫描→连接→断开回归（2025-11-05）
+
+- 设备：OpenRing 生产样机（FW 1.2.3）+ Pixel 7 (Android 14)。
+- 步骤：
+  1. 打开仪表盘 → 点击“扫描” → 弹出底部列表，实时刷新 RSSI。
+  2. 选择 `BCL603DD43` → 显示连接中动效 → 状态卡提示“戒指已连接”。
+  3. 点击“断开” → 状态恢复为“戒指未连接”，列表可重新扫描。
+- 结果：流程顺畅，无异常崩溃或事件丢失。日志记录已启用，可在 `adb logcat -s flutter OpenRing` 复查。
+
+1. 在真机或模拟器上运行最新 Debug 包。
+2. 通过 `adb logcat -s OpenRing flutter` 监听日志。
+3. 在 Flutter 端临时加上两个独立的监听（例如在 `DashboardPage` 与 `SettingsPage` 中分别订阅 `RingPlatform.eventStream` 并打印标识）。
+4. 点击“扫描设备”，等待 `deviceFound` 事件出现。
+5. 观察 logcat，确认两个监听点均收到同一条设备信息（名称、MAC、一致的 RSSI）。
+
+**预期结果**：两个监听器打印同样的事件内容且没有冲突/崩溃，说明广播流有效。
+
+### 场景 B：事件流取消订阅
+
+1. 在订阅代码中保存 `StreamSubscription` 引用。
+2. 执行扫描 → 收到事件后立即 `cancel()`。
+3. 再次触发扫描，确认已经取消的监听不再输出日志，其它仍订阅的监听仍可收到事件。
+
+**预期结果**：取消的订阅不再收到事件，其它订阅正常，说明广播流支持动态订阅管理。
+
+### 场景 C：原生补充验证（可选）
+
+1. 在 Android 原生侧 `MainActivity.sendEvent` 中暂时增加事件计数日志。
+2. 与 Flutter 端日志对照，验证每次 `sendEvent` 调用都对应多个监听器的回调。
+
+## 自动化测试展望（Backlog）
+
+- 在 `test/infrastructure/` 下编写 `ring_platform_event_stream_test.dart`：
+  - 使用 `TestDefaultBinaryMessengerBinding` 模拟 EventChannel。
+  - 注入自定义 `StreamController` 向 `'ring/events'` 推送 `deviceFound` 映射。
+  - 确认多个 Dart 订阅都能收到事件，并比较设备字段。
+- 测试框架搭好后，可扩展验证 `scanCompleted`、`error` 等事件映射。
+
+## 调试指引（补充）
+
+- 常用命令：
+  - `adb logcat -s OpenRing flutter`
+  - `adb shell dumpsys activity | findstr OpenRing`
+- 确保 `RingPlatform.eventStream` 调用前已安装 Mock（用于后续单测）。
+
+---
+
+> 后续执行完每个场景，请在此文件追加日期、环境信息和实际结果，便于回溯。
+
+

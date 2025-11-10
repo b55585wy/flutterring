@@ -12,6 +12,7 @@ public class NotificationHandler {
     // Real-time data display PlotViews
     private static PlotView plotViewG, plotViewI;
     private static PlotView plotViewR, plotViewX;
+    private static PlotView plotViewHRWave; // filtered PPG for HR display
     private static PlotView plotViewY, plotViewZ;
     private static PlotView plotViewGyroX, plotViewGyroY, plotViewGyroZ;
     private static PlotView plotViewTemp0, plotViewTemp1, plotViewTemp2;
@@ -122,17 +123,27 @@ public class NotificationHandler {
     public static void setPlotViewTemp1(PlotView chartView) { plotViewTemp1 = chartView; }
     public static void setPlotViewTemp2(PlotView chartView) { plotViewTemp2 = chartView; }
 
+    // New: HR waveform plot view
+    public static void setPlotViewHRWave(PlotView chartView) { plotViewHRWave = chartView; }
+
     public interface LogRecorder {
         void recordLog(String message);
     }
 
     private static LogRecorder logRecorder;
     private static VitalSignsProcessor vitalSignsProcessor;
+    private static com.tsinghua.openring.inference.ModelInferenceManager inferenceManager;
 
     // Add method to set vital signs processor
     public static void setVitalSignsProcessor(VitalSignsProcessor processor) {
         vitalSignsProcessor = processor;
         recordLog("VitalSignsProcessor connected to NotificationHandler");
+    }
+
+    // Inference manager setter
+    public static void setInferenceManager(com.tsinghua.openring.inference.ModelInferenceManager manager) {
+        inferenceManager = manager;
+        recordLog("InferenceManager connected to NotificationHandler");
     }
 
     // Add method to set log recorder
@@ -1048,6 +1059,17 @@ public class NotificationHandler {
                 vitalSignsProcessor.addDataPoint(green, ir, accX, accY, accZ, timestamp);
             }
 
+            // Feed data to inference manager
+            if (inferenceManager != null) {
+                long ts = System.currentTimeMillis();
+                inferenceManager.onSensorData(green, red, ir, accX, accY, accZ, ts);
+            } else {
+                // 调试：如果inferenceManager为null，记录警告（但不要每次都记录，避免日志过多）
+                if (System.currentTimeMillis() % 5000 < 100) { // 每5秒记录一次
+                    Log.w(TAG, "InferenceManager is null! Data not being processed.");
+                }
+            }
+
             Log.v(TAG, String.format("Realtime point: G:%d, R:%d, IR:%d, AccX:%d, AccY:%d, AccZ:%d, GyroX:%d, GyroY:%d, GyroZ:%d, T0:%d, T1:%d, T2:%d",
                     green, red, ir, accX, accY, accZ, gyroX, gyroY, gyroZ, temp0, temp1, temp2));
             recordLog(String.format("Realtime data point: Green=%d, Red=%d, IR=%d, AccX=%d, AccY=%d, AccZ=%d, GyroX=%d, GyroY=%d, GyroZ=%d, Temp0=%d, Temp1=%d, Temp2=%d",
@@ -1073,6 +1095,12 @@ public class NotificationHandler {
             if (plotViewR != null) plotViewR.addValue((int)red);
             if (plotViewI != null) plotViewI.addValue((int)ir);
 
+            // Lightweight smoothing for HR waveform display (moving average over last N points)
+            if (plotViewHRWave != null) {
+                int filtered = (int) simpleSMA((int)green);
+                plotViewHRWave.addValue(filtered);
+            }
+
             // Update acceleration charts
             if (plotViewX != null) plotViewX.addValue(accX);
             if (plotViewY != null) plotViewY.addValue(accY);
@@ -1091,6 +1119,19 @@ public class NotificationHandler {
         } catch (Exception e) {
             Log.e(TAG, "Error updating realtime charts", e);
         }
+    }
+
+    // Simple moving average (SMA) over a short window for display smoothing
+    private static final int HR_SMA_WINDOW = 5;
+    private static final Deque<Integer> hrSmaBuffer = new ArrayDeque<>();
+    private static long hrSmaSum = 0;
+    private static int simpleSMA(int value) {
+        hrSmaBuffer.addLast(value);
+        hrSmaSum += value;
+        if (hrSmaBuffer.size() > HR_SMA_WINDOW) {
+            hrSmaSum -= hrSmaBuffer.removeFirst();
+        }
+        return (int)(hrSmaSum / hrSmaBuffer.size());
     }
 
     /**

@@ -1,0 +1,7 @@
+<resources>
+    <!-- Override to satisfy AAPT positional formatting requirement -->
+    <string name="dfu_status_uploading_part">Uploading part %1$d/%2$d</string>
+</resources>
+
+
+

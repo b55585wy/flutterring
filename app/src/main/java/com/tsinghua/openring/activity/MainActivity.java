@@ -40,6 +40,7 @@ import com.lm.sdk.utils.GlobalParameterUtils;
 import com.tsinghua.openring.R;
 import com.tsinghua.openring.PlotView;
 import com.tsinghua.openring.utils.BLEService;
+import com.tsinghua.openring.inference.ModelInferenceManager;
 import com.tsinghua.openring.utils.NotificationHandler;
 import com.tsinghua.openring.utils.VitalSignsProcessor;
 
@@ -115,6 +116,7 @@ public class MainActivity extends AppCompatActivity implements IResponseListener
     private Button stopMeasurementButton;
     private TextView measurementStatusText;
     private PlotView plotViewG, plotViewI, plotViewR;
+    private PlotView plotViewHRWave;
     private PlotView plotViewX, plotViewY, plotViewZ;
     private PlotView plotViewGyroX, plotViewGyroY, plotViewGyroZ;
     private PlotView plotViewTemp0, plotViewTemp1, plotViewTemp2;
@@ -122,12 +124,18 @@ public class MainActivity extends AppCompatActivity implements IResponseListener
     
     // HR/RR Display Components
     private TextView heartRateValue;
-    private TextView respiratoryRateValue;
+    private TextView bpSysValue;
+    private TextView bpDiaValue;
+    private TextView spo2Value;
+    private TextView rrValue;
+    // Removed secondary numeric TextView; right column shows waveform plot
     private TextView signalQualityIndicator;
     private TextView lastUpdateTime;
     
     // Vital Signs Processor
     private VitalSignsProcessor vitalSignsProcessor;
+    private ModelInferenceManager modelInferenceManager;
+    private VitalSignsProcessor.SignalQuality currentSignalQuality = VitalSignsProcessor.SignalQuality.NO_SIGNAL;
 
     // File Operation Related
     private List<FileInfo> fileList = new ArrayList<>();
@@ -364,6 +372,7 @@ public class MainActivity extends AppCompatActivity implements IResponseListener
         plotViewG = findViewById(R.id.plotViewG);
         plotViewI = findViewById(R.id.plotViewI);
         plotViewR = findViewById(R.id.plotViewR);
+        plotViewHRWave = findViewById(R.id.plotViewHRWave);
         plotViewX = findViewById(R.id.plotViewX);
         plotViewY = findViewById(R.id.plotViewY);
         plotViewZ = findViewById(R.id.plotViewZ);
@@ -376,7 +385,11 @@ public class MainActivity extends AppCompatActivity implements IResponseListener
         
         // HR/RR Display Components
         heartRateValue = findViewById(R.id.heartRateValue);
-        respiratoryRateValue = findViewById(R.id.respiratoryRateValue);
+        bpSysValue = findViewById(R.id.bpSysValue);
+        bpDiaValue = findViewById(R.id.bpDiaValue);
+        spo2Value = findViewById(R.id.spo2Value);
+        rrValue = findViewById(R.id.rrValue);
+        // secondary numeric TextView removed; right column is a PlotView
         signalQualityIndicator = findViewById(R.id.signalQualityIndicator);
         lastUpdateTime = findViewById(R.id.lastUpdateTime);
 
@@ -400,6 +413,7 @@ public class MainActivity extends AppCompatActivity implements IResponseListener
         if (plotViewG != null) plotViewG.setPlotColor(Color.parseColor("#4CAF50"));
         if (plotViewI != null) plotViewI.setPlotColor(Color.parseColor("#FF9800"));
         if (plotViewR != null) plotViewR.setPlotColor(Color.parseColor("#F44336"));
+        if (plotViewHRWave != null) plotViewHRWave.setPlotColor(Color.parseColor("#2196F3"));
         if (plotViewX != null) plotViewX.setPlotColor(Color.parseColor("#2196F3"));
         if (plotViewY != null) plotViewY.setPlotColor(Color.parseColor("#9C27B0"));
         if (plotViewZ != null) plotViewZ.setPlotColor(Color.parseColor("#00BCD4"));
@@ -423,7 +437,10 @@ public class MainActivity extends AppCompatActivity implements IResponseListener
         
         // Initialize HR/RR display with default values
         if (heartRateValue != null) heartRateValue.setText("--");
-        if (respiratoryRateValue != null) respiratoryRateValue.setText("--");
+        if (bpSysValue != null) bpSysValue.setText("--");
+        if (bpDiaValue != null) bpDiaValue.setText("--");
+        if (spo2Value != null) spo2Value.setText("--");
+        // no secondary numeric value now
         if (signalQualityIndicator != null) {
             signalQualityIndicator.setText("No Signal");
             signalQualityIndicator.setTextColor(Color.parseColor("#9E9E9E"));
@@ -436,6 +453,7 @@ public class MainActivity extends AppCompatActivity implements IResponseListener
         NotificationHandler.setPlotViewG(plotViewG);
         NotificationHandler.setPlotViewI(plotViewI);
         NotificationHandler.setPlotViewR(plotViewR);
+        NotificationHandler.setPlotViewHRWave(plotViewHRWave);
         NotificationHandler.setPlotViewX(plotViewX);
         NotificationHandler.setPlotViewY(plotViewY);
         NotificationHandler.setPlotViewZ(plotViewZ);
@@ -542,33 +560,32 @@ public class MainActivity extends AppCompatActivity implements IResponseListener
         vitalSignsProcessor = new VitalSignsProcessor(new VitalSignsProcessor.VitalSignsCallback() {
             @Override
             public void onHeartRateUpdate(int heartRate) {
-                mainHandler.post(() -> {
-                    if (heartRateValue != null) {
-                        heartRateValue.setText(String.valueOf(heartRate));
-                    }
-                    updateLastUpdateTime();
-                    recordLog("Heart Rate: " + heartRate + " BPM");
-                });
+                // Transformer-only for HR: ignore traditional HR UI updates
             }
 
-            @Override
-            public void onRespiratoryRateUpdate(int respiratoryRate) {
-                mainHandler.post(() -> {
-                    if (respiratoryRateValue != null) {
-                        respiratoryRateValue.setText(String.valueOf(respiratoryRate));
-                    }
-                    updateLastUpdateTime();
-                    recordLog("Respiratory Rate: " + respiratoryRate + " RPM");
-                });
-            }
 
             @Override
             public void onSignalQualityUpdate(VitalSignsProcessor.SignalQuality quality) {
                 mainHandler.post(() -> {
+                    // 保存当前信号质量状态
+                    currentSignalQuality = quality;
+                    
                     if (signalQualityIndicator != null) {
                         signalQualityIndicator.setText(quality.getDisplayName());
                         signalQualityIndicator.setTextColor(Color.parseColor(quality.getColor()));
                     }
+                    
+                    // 当信号质量为 POOR 或 NO_SIGNAL 时，清空所有生理指标显示
+                    if (quality == VitalSignsProcessor.SignalQuality.POOR || 
+                        quality == VitalSignsProcessor.SignalQuality.NO_SIGNAL) {
+                        if (heartRateValue != null) heartRateValue.setText("--");
+                        if (bpSysValue != null) bpSysValue.setText("--");
+                        if (bpDiaValue != null) bpDiaValue.setText("--");
+                        if (spo2Value != null) spo2Value.setText("--");
+                        if (rrValue != null) rrValue.setText("--");
+                        recordLog("Signal Quality Poor - Clearing all vital signs display");
+                    }
+                    
                     recordLog("Signal Quality: " + quality.getDisplayName());
                 });
             }
@@ -576,6 +593,95 @@ public class MainActivity extends AppCompatActivity implements IResponseListener
         
         // Set the vital signs processor in NotificationHandler
         NotificationHandler.setVitalSignsProcessor(vitalSignsProcessor);
+        
+        // Initialize transformer inference manager
+        modelInferenceManager = new ModelInferenceManager(getApplicationContext(), new ModelInferenceManager.Listener() {
+            @Override
+            public void onHrPredicted(int bpm) {
+                mainHandler.post(() -> {
+                    // 只在信号质量良好时更新显示
+                    if (isSignalQualityGood() && heartRateValue != null) {
+                        heartRateValue.setText(String.valueOf(bpm));
+                        updateLastUpdateTime();
+                        recordLog("[Model] HR: " + bpm + " BPM");
+                    } else {
+                        recordLog("[Model] HR: " + bpm + " BPM (not displayed - signal quality poor)");
+                    }
+                });
+            }
+
+            @Override
+            public void onBpSysPredicted(int mmHg) {
+                mainHandler.post(() -> {
+                    // 只在信号质量良好时更新显示
+                    if (isSignalQualityGood() && bpSysValue != null) {
+                        bpSysValue.setText(String.valueOf(mmHg));
+                        recordLog("[Model] BP_SYS: " + mmHg + " mmHg");
+                    } else {
+                        recordLog("[Model] BP_SYS: " + mmHg + " mmHg (not displayed - signal quality poor)");
+                    }
+                });
+            }
+
+            @Override
+            public void onBpDiaPredicted(int mmHg) {
+                mainHandler.post(() -> {
+                    // 只在信号质量良好时更新显示
+                    if (isSignalQualityGood() && bpDiaValue != null) {
+                        bpDiaValue.setText(String.valueOf(mmHg));
+                        recordLog("[Model] BP_DIA: " + mmHg + " mmHg");
+                    } else {
+                        recordLog("[Model] BP_DIA: " + mmHg + " mmHg (not displayed - signal quality poor)");
+                    }
+                });
+            }
+
+            @Override
+            public void onSpo2Predicted(int percent) {
+                mainHandler.post(() -> {
+                    // 只在信号质量良好时更新显示
+                    if (isSignalQualityGood() && spo2Value != null) {
+                        spo2Value.setText(String.valueOf(percent));
+                        recordLog("[Model] SpO2: " + percent + "%");
+                    } else {
+                        recordLog("[Model] SpO2: " + percent + "% (not displayed - signal quality poor)");
+                    }
+                });
+            }
+            
+            @Override
+            public void onRrPredicted(int brpm) {
+                mainHandler.post(() -> {
+                    // 只在信号质量良好时更新显示
+                    if (isSignalQualityGood() && rrValue != null) {
+                        rrValue.setText(String.valueOf(brpm));
+                        recordLog("[Model] RR: " + brpm + " brpm");
+                    } else {
+                        recordLog("[Model] RR: " + brpm + " brpm (not displayed - signal quality poor)");
+                    }
+                });
+            }
+
+            @Override
+            public void onDebugLog(String message) {
+                recordLog("[Model] " + message);
+            }
+        });
+        modelInferenceManager.init();
+        NotificationHandler.setInferenceManager(modelInferenceManager);
+        // Log model loading status to UI logs
+        try {
+            String status = modelInferenceManager.reportStatus();
+            for (String line : status.split("\n")) {
+                if (!line.trim().isEmpty()) recordLog(line);
+            }
+            // 显示日志文件路径
+            String logPath = ModelInferenceManager.getLogFilePath();
+            if (logPath != null) {
+                recordLog("Model Inference日志文件: " + logPath);
+                recordLog("使用命令拉取日志: adb pull " + logPath + " ./");
+            }
+        } catch (Exception ignored) {}
         
         recordLog("Vital Signs Processor initialized");
     }
@@ -1326,6 +1432,11 @@ public class MainActivity extends AppCompatActivity implements IResponseListener
             isMeasuring = true;
             clearAllPlots();
 
+            if (modelInferenceManager != null) {
+                modelInferenceManager.reset();
+            }
+            clearVitalSignsDisplay();
+
             NotificationHandler.setMeasurementTime(measurementTime);
             updateMeasurementUI(true);
             updateMeasurementStatus("Measuring... (0/" + measurementTime + "s)");
@@ -1358,6 +1469,10 @@ public class MainActivity extends AppCompatActivity implements IResponseListener
             // Clear HR/RR display values
             clearVitalSignsDisplay();
 
+            if (modelInferenceManager != null) {
+                modelInferenceManager.reset();
+            }
+
             updateMeasurementUI(false);
             updateMeasurementStatus("Measurement stopped");
 
@@ -1371,7 +1486,10 @@ public class MainActivity extends AppCompatActivity implements IResponseListener
     private void clearVitalSignsDisplay() {
         mainHandler.post(() -> {
             if (heartRateValue != null) heartRateValue.setText("--");
-            if (respiratoryRateValue != null) respiratoryRateValue.setText("--");
+            if (bpSysValue != null) bpSysValue.setText("--");
+            if (bpDiaValue != null) bpDiaValue.setText("--");
+            if (spo2Value != null) spo2Value.setText("--");
+            // no secondary numeric value now
             if (signalQualityIndicator != null) {
                 signalQualityIndicator.setText("No Signal");
                 signalQualityIndicator.setTextColor(Color.parseColor("#9E9E9E"));
@@ -2490,8 +2608,19 @@ public class MainActivity extends AppCompatActivity implements IResponseListener
         // App refresh
     }
 
+    /**
+     * 检查当前信号质量是否良好（可以显示生理指标）
+     * @return true 如果信号质量为 EXCELLENT、GOOD 或 FAIR
+     */
+    private boolean isSignalQualityGood() {
+        return currentSignalQuality != VitalSignsProcessor.SignalQuality.POOR &&
+               currentSignalQuality != VitalSignsProcessor.SignalQuality.NO_SIGNAL;
+    }
+
     @Override
     protected void onDestroy() {
+        // 关闭模型推理日志文件
+        ModelInferenceManager.closeFileLogging();
         super.onDestroy();
 
         // Clean up resources
